@@ -6,9 +6,24 @@
 
 ---
 
-## 🚦 Start Here — Day 1 Gap Map
+## 🚀 Start Here — Today
 
-Before reading anything else, open [`week-4/12-interview-qna-master.md`](./week-4/12-interview-qna-master.md) and scan **Q1–Q10**.
+**Choose your path:**
+
+### **Path 1: Just Get Started Now (Recommended)**
+→ Open [`QUICK-START.md`](./QUICK-START.md) — **10 min setup, 30 min first study session**
+
+### **Path 2: Understand the Whole Plan First**
+→ Open [`ADVAHEALTH-INTERVIEW-STRATEGY.md`](./ADVAHEALTH-INTERVIEW-STRATEGY.md) — 6-week detailed strategy
+
+### **Path 3: Optimize Your Learning Method**
+→ Open [`STUDY-SCHEDULE-OPTIMAL.md`](./STUDY-SCHEDULE-OPTIMAL.md) — **Research-backed study techniques** (45 min/day recommendations)
+
+---
+
+## 📋 After Your Setup
+
+Before reading anything else, open [`week-4/12-interview-qna-master.md`](./week-4/12-interview-qna-master.md) and scan **Q1–Q10** (diagnostic).
 
 - Answer each one out loud without looking at the answer.
 - Mark the ones you fumbled.
@@ -62,31 +77,43 @@ Use this at the **end of each week** to confirm you can answer under pressure �
 
 ```
 java-interview-prep/
-├── README.md                        ← You are here
+├── README.md                              ← You are here
+├── ADVAHEALTH-INTERVIEW-STRATEGY.md       ← 🆕 6-week strategy for AdvaHealth JD ⭐
 │
 ├── week-1/
-│   ├── 01-core-java-oop.md          ← OOP principles, SOLID, design patterns
-│   ├── 02-collections-generics.md   ← Collections framework, Generics, comparators
-│   └── 03-java8-modern-features.md  ← Lambda, Stream, Optional, Functional interfaces
+│   ├── 01-core-java-oop.md               ← OOP principles, SOLID, design patterns
+│   ├── 02-collections-generics.md        ← Collections framework, Generics, comparators
+│   ├── 03-java8-modern-features.md       ← Lambda, Stream, Optional, Functional interfaces
+│   └── exception-handling.md             ← 🆕 Checked/Unchecked, custom exceptions, global handler
 │
 ├── week-2/
-│   ├── 04-concurrency-threading.md  ← Threads, ExecutorService, CompletableFuture, locks
-│   ├── 05-jvm-internals.md          ← Memory model, GC, ClassLoader, JIT
-│   └── 06-java9-21-features.md      ← Records, Sealed classes, Switch expressions, Virtual threads
+│   ├── 04-concurrency-threading.md       ← Threads, ExecutorService, CompletableFuture, locks
+│   ├── 05-jvm-internals.md               ← Memory model, GC, ClassLoader, JIT
+│   └── 06-java9-21-features.md           ← 🔼 Extended: Records, Virtual Threads, Java 11 APIs,
+│                                            SequencedCollections, Text Blocks, Helpful NPE
 │
 ├── week-3/
-│   ├── 07-spring-boot-core.md       ← Auto-config, DI, Bean lifecycle, Actuator, AOP
-│   ├── 08-spring-security.md        ← JWT, OAuth2, Method security, Filter chain
-│   └── 09-spring-data-jpa.md        ← Repositories, JPQL, Entity mapping, Transactions
+│   ├── 07-spring-boot-core.md            ← Auto-config, DI, Bean lifecycle, Actuator, AOP
+│   ├── 08-spring-security.md             ← JWT, OAuth2, Method security, Filter chain
+│   ├── 09-spring-data-jpa.md             ← Repositories, JPQL, Entity mapping, Transactions
+│   └── spring-boot-testing.md            ← 🆕 @WebMvcTest, @DataJpaTest, Testcontainers, Mockito
 │
 ├── week-4/
-│   ├── 10-database-jpa-advanced.md  ← Hibernate cache, connection pool, migrations
+│   ├── 10-database-jpa-advanced.md       ← Hibernate cache, connection pool, migrations
 │   ├── 11-system-design-microservices.md ← REST, microservices, caching, messaging
-│   └── 12-interview-qna-master.md   ← 20 Q&A with headline answers + deep dives ⭐
+│   ├── 12-interview-qna-master.md        ← 20 Q&A with headline answers + deep dives ⭐
+│   ├── database-isolation-levels.md      ← 🆕 Isolation levels, MVCC, deadlocks, PostgreSQL tips
+│   ├── security-secure-coding.md         ← 🆕 OWASP, Spring Security hardening, HIPAA logging
+│   └── aws-basics-for-backend.md         ← 🆕 EC2, RDS, S3, ECS, CloudWatch, IAM
+│
+├── bonus-hikaricp-connection-pool.md
+├── bonus-kafka-consumer-bugs.md
+├── bonus-transactional-gotchas.md
+├── bonus-virtual-threads-java21.md
 │
 └── cheatsheets/
-    ├── java-cheatsheet.md           ← Quick reference: syntax, APIs, patterns
-    └── spring-boot-cheatsheet.md    ← Annotations, config, common patterns
+    ├── java-cheatsheet.md                ← Quick reference: syntax, APIs, patterns
+    └── spring-boot-cheatsheet.md         ← Annotations, config, common patterns
 ```
 
 ---

@@ -1,13 +1,13 @@
 # Week 2 — Day 5–7: Java 9–21 Modern Features
 
-> 📖 **Estimated reading time:** 35 minutes  
-> 🎯 **Focus:** Records, Sealed classes, Pattern matching, Switch expressions, Virtual Threads
+>  **Estimated reading time:** 35 minutes  
+>  **Focus:** Records, Sealed classes, Pattern matching, Switch expressions, Virtual Threads
 
 ---
 
 ## 1. Records (Java 16) — Immutable Data Classes
 
-### 📌 Concept Summary
+###  Concept Summary
 `record` is a special class for **immutable data carriers**. Auto-generates constructor, getters, `equals`, `hashCode`, and `toString`.
 
 ```java
@@ -88,7 +88,7 @@ switch (shape) {
 
 ## 4. Virtual Threads (Java 21) — Project Loom
 
-### 📌 Concept Summary
+###  Concept Summary
 Virtual Threads are JVM-managed lightweight threads. You can create **millions** cheaply. They shine for **I/O-bound** workloads — when a virtual thread blocks on I/O, the carrier OS thread is freed.
 
 ```java
@@ -158,14 +158,169 @@ Stream.iterate(0, n -> n < 10, n -> n + 2).toList(); // [0,2,4,6,8]
 
 ---
 
-## 6. Java Version Summary
+## 6. Java 11 — String Enhancements & HTTP Client
 
-| Version | Key Features |
-|---------|-------------|
-| **Java 8** | Lambdas, Stream, Optional, java.time, CompletableFuture |
-| **Java 11** | String.strip/isBlank/lines, HTTP Client API — **LTS** |
-| **Java 17** | Records, Sealed classes, Pattern matching, Text blocks — **LTS** |
-| **Java 21** | Virtual threads, Pattern matching switch, Record patterns — **LTS** |
+### String API (Java 11) — Frequently Asked
+```java
+String s = "  Hello World  ";
+
+// strip() vs trim() — strip() is Unicode-aware
+s.strip();           // "Hello World"    ← use this, not trim()
+s.stripLeading();    // "Hello World  "
+s.stripTrailing();   // "  Hello World"
+s.trim();            // "Hello World"    ← only removes ASCII whitespace
+
+// isBlank() — true if empty or contains only whitespace
+"".isBlank();         // true
+"  ".isBlank();       // true
+" a ".isBlank();      // false
+// vs isEmpty(): "  ".isEmpty() → false (has chars), "  ".isBlank() → true
+
+// lines() — split by line terminators, returns Stream<String>
+"line1\nline2\nline3".lines().toList(); // ["line1", "line2", "line3"]
+// Better than split("\\n") for multi-platform line endings (\r\n vs \n)
+
+// repeat() — string multiplication
+"-".repeat(20); // "--------------------"
+"ab".repeat(3); // "ababab"
+```
+
+### HTTP Client (Java 11) — Replaces HttpURLConnection
+```java
+// Modern, supports HTTP/2, async, non-blocking
+HttpClient client = HttpClient.newBuilder()
+    .version(HttpClient.Version.HTTP_2)
+    .connectTimeout(Duration.ofSeconds(10))
+    .followRedirects(HttpClient.Redirect.NORMAL)
+    .build();
+
+// Synchronous request
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("https://api.advahealth.com/patients/123"))
+    .header("Authorization", "Bearer " + token)
+    .header("Content-Type", "application/json")
+    .timeout(Duration.ofSeconds(30))
+    .GET()
+    .build();
+
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+int statusCode = response.statusCode();  // 200
+String body = response.body();           // JSON string
+
+// Async request — non-blocking
+CompletableFuture<HttpResponse<String>> future = client.sendAsync(
+    request,
+    HttpResponse.BodyHandlers.ofString()
+);
+future.thenApply(HttpResponse::body)
+      .thenApply(body -> objectMapper.readValue(body, PatientDTO.class))
+      .thenAccept(dto -> processPatient(dto));
+
+// POST with body
+HttpRequest postRequest = HttpRequest.newBuilder()
+    .uri(URI.create("https://ehr-api.com/sync"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString("{\"patientId\": \"123\"}"))
+    .build();
+```
+
+### ❓ Interview Question
+> "Why was `strip()` added in Java 11 when `trim()` already existed?"
+
+### ✅ Model Answer
+`trim()` removes characters with ASCII value ≤ 32 (space, tab, etc.) — it's not Unicode-aware. `strip()` uses `Character.isWhitespace()` which handles Unicode whitespace characters like non-breaking space (U+00A0) and other Unicode whitespace that `trim()` leaves untouched. Always prefer `strip()` for internationalized applications.
+
+---
+
+## 7. Java 14–15 — Helpful NullPointerExceptions & Text Blocks
+
+### Helpful NPE Messages (Java 14)
+```java
+// Before Java 14:
+// NullPointerException (no useful info)
+
+// Java 14+:
+// "Cannot invoke "String.length()" because "order.patient.name" is null"
+// The JVM tells you EXACTLY which reference was null
+
+Order order = getOrder();
+int len = order.getPatient().getName().length(); // If patient is null:
+// Java 14+: "Cannot invoke 'Patient.getName()' because the return value of
+//            'Order.getPatient()' is null"
+// Java 13-: "NullPointerException" — no context at all
+```
+
+### Text Blocks (Java 15, preview in 13–14)
+```java
+// JSON payload without escaping
+String json = """
+        {
+          "patientId": "%s",
+          "studyType": "CT_SCAN",
+          "urgent": true
+        }
+        """.formatted(patientId);
+
+// SQL without concatenation
+String sql = """
+        SELECT p.id, p.mrn, p.name, s.study_date
+        FROM patients p
+        JOIN dicom_studies s ON s.patient_id = p.id
+        WHERE s.study_type = :type
+          AND s.status = 'PENDING'
+        ORDER BY s.study_date DESC
+        LIMIT :limit
+        """;
+
+// Leading whitespace stripped based on closing """ indentation
+// Content indented consistently — no leftover spaces in the result
+```
+
+---
+
+## 8. Java 21 — SequencedCollections
+
+```java
+// Java 21 introduced SequencedCollection — finally a unified API for ordered access
+// Fixes the inconsistency: ArrayList.get(0) vs LinkedList.getFirst() vs Deque.peekFirst()
+
+// All List, Deque, LinkedHashSet, LinkedHashMap now have:
+List<String> list = new ArrayList<>(List.of("a", "b", "c"));
+
+// First/Last element — consistent across all sequenced types
+list.getFirst();  // "a"        (was: list.get(0))
+list.getLast();   // "c"        (was: list.get(list.size() - 1))
+list.addFirst("z"); // ["z", "a", "b", "c"]
+list.addLast("x");  // ["z", "a", "b", "c", "x"]
+list.removeFirst(); // "z", list is now ["a", "b", "c", "x"]
+list.removeLast();  // "x", list is now ["a", "b", "c"]
+
+// Reversed view — zero-copy
+List<String> reversed = list.reversed(); // ["c", "b", "a"] — live view
+reversed.forEach(System.out::println);
+```
+
+---
+
+## 9. Java Version Summary
+
+| Version | Key Features | LTS? |
+|---------|-------------|------|
+| **Java 8** | Lambdas, Stream, Optional, java.time, CompletableFuture | — |
+| **Java 11** | `String.strip/isBlank/lines`, HTTP Client API, `var` in lambdas | ✅ LTS |
+| **Java 14** | Helpful NPE, Records (preview), Pattern matching (preview) | — |
+| **Java 15** | Text Blocks GA | — |
+| **Java 16** | Records GA, `instanceof` pattern matching GA | — |
+| **Java 17** | Sealed classes GA, Pattern matching for switch (preview) | ✅ LTS |
+| **Java 21** | Virtual Threads GA, Pattern matching switch GA, SequencedCollections, Record patterns | ✅ LTS |
+
+### JD Note for AdvaHealth
+The JD says "Java 17+, preferably Java 21/25". Know these in order of importance:
+1. **Virtual Threads (Java 21)** — most likely to be asked, big paradigm shift
+2. **Records (Java 16)** — daily use in DTOs/responses
+3. **Sealed classes (Java 17)** — shows modern Java knowledge
+4. **Pattern matching switch (Java 21)** — elegant code, likely asked
+5. **Text Blocks (Java 15)** — SQL, JSON in code — practical
 
 ---
 

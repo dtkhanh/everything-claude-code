@@ -270,4 +270,3 @@ sb.toString();
 new String("literal") // heap, NOT pool
 s.intern()            // get pool ref (or add)
 ```
-

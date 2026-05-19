@@ -1,7 +1,7 @@
 # Week 3 — Day 1–3: Spring Boot Core
 
-> 📖 **Estimated reading time:** 50 minutes  
-> 🎯 **Focus:** Auto-configuration, DI/IoC, Bean lifecycle, AOP, Actuator
+>  **Estimated reading time:** 50 minutes  
+>  **Focus:** Auto-configuration, DI/IoC, Bean lifecycle, AOP, Actuator
 
 ---
 
@@ -9,14 +9,14 @@
 
 Add `spring-boot-starter-data-jpa` to `pom.xml`. No XML, no manual bean setup. Spring Boot creates an `EntityManagerFactory`, a `TransactionManager`, and wires `JpaRepository` support automatically. Here's the exact mechanism:
 
-### 🔑 The Mechanism (Step by Step)
+###  The Mechanism (Step by Step)
 1. `@SpringBootApplication` = `@Configuration` + `@EnableAutoConfiguration` + `@ComponentScan`
 2. `@EnableAutoConfiguration` triggers `AutoConfigurationImportSelector`
 3. It reads `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (Boot 3) — a list of auto-config classes
 4. Each auto-config class is annotated with `@Conditional*` — only applies if condition is met
 5. Spring instantiates matching auto-config classes → they register beans
 
-### 💻 Code Example — How a custom auto-config looks
+###  Code Example — How a custom auto-config looks
 ```java
 @AutoConfiguration
 @ConditionalOnClass(DataSource.class)              // only if DataSource is on classpath
@@ -36,7 +36,7 @@ public class DataSourceAutoConfiguration {
 }
 ```
 
-### 💻 Code Example — @Conditional annotations
+###  Code Example — @Conditional annotations
 ```java
 @ConditionalOnClass(RedisTemplate.class)          // class exists on classpath
 @ConditionalOnMissingClass("org.mongodb.Driver")  // class does NOT exist
@@ -62,15 +62,15 @@ You can also:
 
 ## 2. Dependency Injection & IoC
 
-### 📌 Concept Summary
+###  Concept Summary
 **Inversion of Control**: the framework creates and manages objects (beans), not your code. **Dependency Injection**: Spring injects required dependencies into your beans automatically.
 
-### 🔑 Key Points
+###  Key Points
 - 3 injection types: constructor (✅), setter (OK), field (❌)
 - Constructor injection is mandatory for required deps — enables immutability and testability
 - `@Autowired` is implicit for single-constructor beans in Spring 4.3+
 
-### 💻 Code Example — Injection types
+###  Code Example — Injection types
 ```java
 // ✅ PREFERRED: Constructor injection
 @Service
@@ -120,7 +120,7 @@ public class NotificationService {
 
 ## 3. Bean Lifecycle
 
-### 📌 Concept Summary
+###  Concept Summary
 Spring beans go through a lifecycle: instantiation → dependency injection → initialization → in-use → destruction.
 
 ```
@@ -137,7 +137,7 @@ Spring beans go through a lifecycle: instantiation → dependency injection → 
    @PreDestroy → destroy() (DisposableBean) → destroy-method
 ```
 
-### 💻 Code Example
+###  Code Example
 ```java
 @Component
 @Slf4j
@@ -167,7 +167,7 @@ public class CacheWarmupService {
 }
 ```
 
-### 🔑 Bean Scopes
+###  Bean Scopes
 ```java
 @Component
 @Scope("singleton")    // DEFAULT — one instance per container
@@ -200,17 +200,17 @@ All three are specializations of `@Component` — at the component scan level, t
 
 ## 4. AOP — Aspect-Oriented Programming
 
-### 📌 Concept Summary
+###  Concept Summary
 AOP separates **cross-cutting concerns** (logging, caching, transactions, security) from business logic. Spring implements AOP with **proxies** — your bean is wrapped in a proxy that intercepts method calls.
 
-### 🔑 Key Terms
+###  Key Terms
 - **Aspect**: class containing cross-cutting logic (`@Aspect`)
 - **Advice**: the code that runs (`@Before`, `@After`, `@Around`, `@AfterReturning`, `@AfterThrowing`)
 - **Pointcut**: expression defining which methods to intercept
 - **JoinPoint**: a specific method execution being intercepted
 - **Proxy**: the wrapped bean (JDK proxy for interfaces, CGLIB proxy for classes)
 
-### 💻 Code Example — Logging Aspect
+###  Code Example — Logging Aspect
 ```java
 @Aspect
 @Component
@@ -282,7 +282,7 @@ class OrderService {
 
 ## 5. Configuration & Properties
 
-### 💻 Code Example — @ConfigurationProperties
+###  Code Example — @ConfigurationProperties
 ```java
 // application.yml
 // app:
@@ -311,7 +311,7 @@ public class CacheConfig {
 }
 ```
 
-### 💻 Code Example — Profiles
+###  Code Example — Profiles
 ```java
 // application.yml
 // spring:
@@ -342,7 +342,7 @@ public class ExternalApiConfig {
 
 ## 6. Spring Boot Actuator
 
-### 📌 Concept Summary
+###  Concept Summary
 Actuator exposes **production-ready endpoints** for monitoring, health checks, metrics, and app management.
 
 ```yaml
@@ -395,5 +395,4 @@ public class DatabaseHealthIndicator implements HealthIndicator {
 ---
 
 *Next: [08-spring-security.md](./08-spring-security.md)*
-
 
