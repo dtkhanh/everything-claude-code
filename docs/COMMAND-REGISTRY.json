@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 75,
+  "totalCommands": 97,
   "commands": [
     {
       "command": "aside",
@@ -10,6 +10,15 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/aside.md"
+    },
+    {
+      "command": "astra-review",
+      "description": "Send Claude-written code to GPT-6-Astra (ChatGPT, via Codex CLI) for an independent cross-provider review, then fix what it finds.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/astra-review.md"
     },
     {
       "command": "auto-update",
@@ -40,7 +49,7 @@
     },
     {
       "command": "code-review",
-      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode)",
+      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode). Use for a step-by-step PRP-style checklist review; for a multi-agent pass use /review-pr, and for the adversarially-verified Workflow pass use /orch-review.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -49,7 +58,7 @@
     },
     {
       "command": "cost-report",
-      "description": "Generate a local Claude Code cost report from a cost-tracker SQLite database.",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log. Use for a terminal summary or CSV export of tracked spend; the cost-tracking skill covers the same metrics log for on-demand cost/budget questions asked in conversation.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -101,7 +110,7 @@
     },
     {
       "command": "ecc-guide",
-      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.",
+      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface. This is the slash-command entrypoint for that navigation; the ecc-guide skill covers the same map for on-demand use in conversation.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -110,6 +119,72 @@
         "security-scan"
       ],
       "path": "commands/ecc-guide.md"
+    },
+    {
+      "command": "epic-claim",
+      "description": "Claim an epic issue, stamp coordination state, and sync local ownership.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature"
+      ],
+      "path": "commands/epic-claim.md"
+    },
+    {
+      "command": "epic-decompose",
+      "description": "Break an epic into task children without creating task branches.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-decompose.md"
+    },
+    {
+      "command": "epic-publish",
+      "description": "Publish a validated epic update back to the issue and local cache.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-publish.md"
+    },
+    {
+      "command": "epic-review",
+      "description": "Mark epic review requested, approved, or changes requested.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-review.md"
+    },
+    {
+      "command": "epic-sync",
+      "description": "Sync epic issue bodies, labels, and local coordination snapshots from GitHub.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-sync.md"
+    },
+    {
+      "command": "epic-unblock",
+      "description": "Sweep blocked epic issues and reopen anything whose dependencies are closed.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-unblock.md"
+    },
+    {
+      "command": "epic-validate",
+      "description": "Validate epic readiness, dependencies, and coordination policy.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-validate.md"
     },
     {
       "command": "evolve",
@@ -259,7 +334,7 @@
     },
     {
       "command": "harness-audit",
-      "description": "Run a deterministic repository harness audit and return a prioritized scorecard.",
+      "description": "Run a deterministic repository harness audit and return a prioritized scorecard. Use for a deterministic overall repo-readiness scorecard; for a security-specific audit use the security-scan command.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -295,7 +370,7 @@
     },
     {
       "command": "hookify",
-      "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions",
+      "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions. Use to generate a new hook rule file from conversation analysis or a described behavior; the hookify-rules skill covers hookify rule syntax and patterns for authoring or editing rules directly.",
       "type": "general",
       "primaryAgents": [],
       "allAgents": [],
@@ -398,7 +473,7 @@
     },
     {
       "command": "learn",
-      "description": "Extract reusable patterns from the current session and save them as candidate skills or guidance.",
+      "description": "Extract reusable patterns from the current session and save them as candidate skills or guidance. Use to review a session on demand and persist an approved skill file; continuous-learning-v2 is a separate, configurable Stop/PreToolUse/PostToolUse hook-observation and instinct-evolution system (background observer disabled by default) and is not an automatic equivalent of this command.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -407,7 +482,7 @@
     },
     {
       "command": "loop-start",
-      "description": "Start a managed autonomous loop pattern with safety defaults and explicit stop conditions.",
+      "description": "Prepare a managed autonomous loop pattern with safety defaults and explicit stop conditions, then print the commands to launch and monitor it. Use to set up sequential, continuous-pr, rfc-dag, or infinite loop patterns with safety gates before starting one; the continuous-agent-loop skill covers the same pattern selection and quality-gate guidance for in-conversation use (supersedes the deprecated autonomous-loops skill).",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -422,6 +497,17 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/loop-status.md"
+    },
+    {
+      "command": "marketing-campaign",
+      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality. This is the slash-command entrypoint that delegates to the marketing-agent; prefer the marketing-campaign skill for the same end-to-end workflow in conversation.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "marketing-campaign"
+      ],
+      "path": "commands/marketing-campaign.md"
     },
     {
       "command": "model-route",
@@ -461,7 +547,7 @@
     },
     {
       "command": "multi-plan",
-      "description": "Create a multi-model implementation plan without modifying production code.",
+      "description": "Create a multi-model (Codex + Antigravity) implementation plan without modifying production code. Requires the external ccg-workflow runtime, not part of the base ECC install (see Prerequisite below). Use when the user explicitly wants dual-model plan drafts; for a single-model plan with no extra runtime use /plan.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -480,6 +566,87 @@
       "path": "commands/multi-workflow.md"
     },
     {
+      "command": "orch-add-feature",
+      "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature"
+      ],
+      "path": "commands/orch-add-feature.md"
+    },
+    {
+      "command": "orch-build-mvp",
+      "description": "Orchestrate bootstrapping a working MVP from a design/spec doc — ingest, slice, scaffold, TDD, review, gated commit (reuses the GAN harness). Wrapper for the orch-build-mvp skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-build-mvp"
+      ],
+      "path": "commands/orch-build-mvp.md"
+    },
+    {
+      "command": "orch-change-feature",
+      "description": "Orchestrate altering an existing, working feature to new desired behavior — update tests to the new spec, change impl, review, gated commit. Wrapper for the orch-change-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-change-feature.md"
+    },
+    {
+      "command": "orch-fix-defect",
+      "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, gated commit. Wrapper for the orch-fix-defect skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-fix-defect.md"
+    },
+    {
+      "command": "orch-refine-code",
+      "description": "Orchestrate a behavior-preserving refactor — confirm tests green, restructure without changing behavior, keep green, review, gated commit. Wrapper for the orch-refine-code skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-change-feature",
+        "orch-fix-defect",
+        "orch-refine-code"
+      ],
+      "path": "commands/orch-refine-code.md"
+    },
+    {
+      "command": "orch-review",
+      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow. Use for a native-Workflow, adversarially-verified multi-dimension review with fan-out and dedup; for the step-by-step checklist pass use /code-review, and for the multi-agent pass use /review-pr.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/orch-review.md"
+    },
+    {
+      "command": "plan-canvas",
+      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review. This is a thin slash-command entrypoint over the plan-canvas skill, which covers the full workflow and rules.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "plan-canvas"
+      ],
+      "path": "commands/plan-canvas.md"
+    },
+    {
       "command": "plan-prd",
       "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
       "type": "testing",
@@ -490,7 +657,7 @@
     },
     {
       "command": "plan",
-      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.",
+      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code. Use for a single-model inline or PRD-driven implementation plan; for a dual-model (Codex/Antigravity) plan use /multi-plan, and for visual annotate-and-approve review of the resulting plan use /plan-canvas.",
       "type": "testing",
       "primaryAgents": [
         "planner"
@@ -498,7 +665,9 @@
       "allAgents": [
         "planner"
       ],
-      "skills": [],
+      "skills": [
+        "plan-canvas"
+      ],
       "path": "commands/plan.md"
     },
     {
@@ -521,7 +690,7 @@
     },
     {
       "command": "project-init",
-      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.",
+      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings. Use to onboard ECC into a target project via a reviewable dry-run plan; for general feature discovery and navigation use the ecc-guide skill or /ecc-guide command instead.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -581,7 +750,7 @@
     },
     {
       "command": "prp-pr",
-      "description": "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes",
+      "description": "Alias of /pr for the PRP workflow series. Use when creating a pull request mid-PRP workflow; otherwise use /pr.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -599,7 +768,7 @@
     },
     {
       "command": "prune",
-      "description": "Delete pending instincts older than 30 days that were never promoted",
+      "description": "Delete pending instincts older than 30 days that were never promoted. Thin CLI wrapper for continuous-learning-v2's instinct-cli.py prune command; use to clean up stale pending instincts that were never reviewed or promoted.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -626,12 +795,61 @@
     },
     {
       "command": "quality-gate",
-      "description": "Run the ECC quality pipeline for a file or project scope and report remediation steps.",
-      "type": "general",
+      "description": "Run the ECC formatter quality gate for a single file and report remediation steps.",
+      "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [],
       "path": "commands/quality-gate.md"
+    },
+    {
+      "command": "react-build",
+      "description": "Fix React build failures (Vite, webpack, Next.js, CRA, Parcel, esbuild, Bun) incrementally — JSX/TSX compile errors, hydration mismatches, server/client component boundary failures, missing types. Invokes the react-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "react-build-resolver"
+      ],
+      "allAgents": [
+        "react-build-resolver"
+      ],
+      "skills": [
+        "frontend-patterns",
+        "react-patterns"
+      ],
+      "path": "commands/react-build.md"
+    },
+    {
+      "command": "react-review",
+      "description": "Comprehensive React/JSX code review for hook correctness, render performance, server/client component boundaries, accessibility, and React-specific security. Invokes the react-reviewer agent (and typescript-reviewer alongside on TSX/JSX changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "allAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "skills": [
+        "accessibility",
+        "react-patterns",
+        "react-testing"
+      ],
+      "path": "commands/react-review.md"
+    },
+    {
+      "command": "react-test",
+      "description": "Enforce TDD workflow for React. Write React Testing Library tests first (behavior-focused, accessibility-first), then implement components. Detects Vitest or Jest and verifies coverage targets.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "accessibility",
+        "e2e-testing",
+        "react-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/react-test.md"
     },
     {
       "command": "refactor-clean",
@@ -653,7 +871,7 @@
     },
     {
       "command": "review-pr",
-      "description": "Comprehensive PR review using specialized agents",
+      "description": "Comprehensive PR review using specialized agents (code-reviewer, comment-analyzer, pr-test-analyzer, silent-failure-hunter, type-design-analyzer, code-simplifier). Use for a multi-agent PR review pass; for the adversarially-verified Workflow pass use /orch-review, and for the standalone step-by-step checklist review use /code-review.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -705,7 +923,7 @@
     },
     {
       "command": "santa-loop",
-      "description": "Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships.",
+      "description": "Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships. Use for the CLI-driven version of this loop; wraps the santa-method skill.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
@@ -723,7 +941,7 @@
     },
     {
       "command": "security-scan",
-      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces.",
+      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces. This is the slash-command entrypoint for that audit; prefer the security-scan skill for the same AgentShield audit in conversation.",
       "type": "review",
       "primaryAgents": [
         "security-reviewer"
@@ -756,7 +974,7 @@
     },
     {
       "command": "skill-create",
-      "description": "Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App.",
+      "description": "Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App. Use to generate new skills from local git history on demand; check the skill-scout skill first to avoid duplicating an existing local, marketplace, or GitHub skill.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -765,12 +983,23 @@
     },
     {
       "command": "skill-health",
-      "description": "Show skill portfolio health dashboard with charts and analytics",
+      "description": "Show skill portfolio health dashboard with charts and analytics. Use for the quantitative usage/success-rate dashboard; for a qualitative compliance or quality audit use the skill-stocktake skill.",
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [],
       "path": "commands/skill-health.md"
+    },
+    {
+      "command": "skill-host-compat",
+      "description": "Lint ECC skills for Codex/Cursor-safe frontmatter and Claude-only substitutions before a skill PR.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "skill-host-compat"
+      ],
+      "path": "commands/skill-host-compat.md"
     },
     {
       "command": "test-coverage",
@@ -780,6 +1009,17 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/test-coverage.md"
+    },
+    {
+      "command": "token-card",
+      "description": "Render a token-usage stat card from local agent session logs and commit it to the repo. Invokes the token-card skill.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "token-card"
+      ],
+      "path": "commands/token-card.md"
     },
     {
       "command": "update-codemaps",
@@ -798,17 +1038,34 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/update-docs.md"
+    },
+    {
+      "command": "vue-review",
+      "description": "Comprehensive Vue.js code review for Composition API correctness, reactivity, composable patterns, template security, accessibility, and Vue-specific performance. Invokes the vue-reviewer agent (and typescript-reviewer alongside on .vue/.ts changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "allAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "skills": [
+        "vue-patterns"
+      ],
+      "path": "commands/vue-review.md"
     }
   ],
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 8,
-      "orchestration": 6,
+      "general": 12,
+      "orchestration": 12,
       "planning": 2,
       "refactoring": 1,
-      "review": 9,
-      "testing": 47
+      "review": 15,
+      "testing": 53
     },
     "topAgents": [
       {
@@ -817,6 +1074,10 @@
       },
       {
         "agent": "flutter-reviewer",
+        "count": 2
+      },
+      {
+        "agent": "typescript-reviewer",
         "count": 2
       },
       {
@@ -846,10 +1107,6 @@
       {
         "agent": "planner",
         "count": 1
-      },
-      {
-        "agent": "python-reviewer",
-        "count": 1
       }
     ],
     "topSkills": [
@@ -858,15 +1115,31 @@
         "count": 6
       },
       {
+        "skill": "orch-add-feature",
+        "count": 4
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 4
+      },
+      {
+        "skill": "tdd-workflow",
+        "count": 4
+      },
+      {
+        "skill": "accessibility",
+        "count": 3
+      },
+      {
         "skill": "flutter-dart-code-review",
         "count": 3
       },
       {
-        "skill": "rust-patterns",
+        "skill": "orch-fix-defect",
         "count": 3
       },
       {
-        "skill": "tdd-workflow",
+        "skill": "rust-patterns",
         "count": 3
       },
       {
@@ -875,22 +1148,6 @@
       },
       {
         "skill": "cpp-testing",
-        "count": 2
-      },
-      {
-        "skill": "ecc-guide",
-        "count": 2
-      },
-      {
-        "skill": "golang-patterns",
-        "count": 2
-      },
-      {
-        "skill": "golang-testing",
-        "count": 2
-      },
-      {
-        "skill": "kotlin-patterns",
         "count": 2
       }
     ]

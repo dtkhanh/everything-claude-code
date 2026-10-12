@@ -37,13 +37,15 @@ Desktop.ini
 *.sublime-workspace
 
 # Node
-node_modules/
+# No trailing slash: a symlinked node_modules is not a directory to git.
+node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .yarn/
 lerna-debug.log*
+*.tgz
 
 # Build outputs
 dist/
@@ -77,6 +79,7 @@ examples/sessions/*.tmp
 marketing/
 .dmux/
 .dmux-hooks/
+.claude/settings.local.json
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
@@ -97,4 +100,11 @@ ecc2/target/
 # Generated lock files in tool subdirectories
 .opencode/package-lock.json
 .opencode/node_modules/
+
+# yarn is the canonical package manager for this repo (see package.json
+# "packageManager"); ignore stray lockfiles from running another manager locally
+/bun.lock
+/bun.lockb
 assets/images/security/badrudi-exploit.mp4
+
+.aider*

@@ -5,6 +5,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | Command | Primary agent(s) | Notes |
 |---------|------------------|--------|
 | `/plan` | planner | Implementation planning before code |
+| `/plan-canvas` | — (skill: plan-canvas) | Browser review canvas for plan artifacts: annotate, chat, approve/request changes |
 | `/tdd` | tdd-guide | Test-driven development |
 | `/code-review` | code-reviewer | Quality and security review |
 | `/build-fix` | build-error-resolver | Fix build/type errors |
@@ -36,6 +37,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/promote` | — | continuous-learning-v2 |
 | `/projects` | — | continuous-learning-v2 |
 | `/skill-create` | — | skill-create-output script, git history |
+| `/skill-host-compat` | — | validate-skill-host-compat.js, Codex/Cursor skill lint |
 | `/checkpoint` | — | verification-loop skill |
 | `/verify` | — | verification-loop skill |
 | `/eval` | — | eval-harness skill |
@@ -45,6 +47,18 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/claw` | — | NanoClaw CLI (scripts/claw.js) |
 | `/pm2` | — | PM2 service lifecycle |
 | `/security-scan` | security-reviewer (skill) | AgentShield via security-scan skill |
+
+## Non-Slash CLI Surfaces
+
+| CLI surface | Primary skill/runtime | Notes |
+|-------------|-----------------------|-------|
+| `ecc memory init` | unified-memory / `scripts/memory.js` | Initialize project, team, or user Markdown vault scopes |
+| `ecc memory save` | unified-memory / `scripts/memory.js` | Create unreviewed memory; body must come from stdin or a regular file |
+| `ecc memory handoff` | unified-memory / `scripts/memory.js` | Create a targeted, cross-harness handoff |
+| `ecc memory search` | unified-memory / `scripts/memory.js` | Bounded lexical search over selected vault scopes |
+| `ecc memory read` | unified-memory / `scripts/memory.js` | Read one memory plus derived backlinks |
+| `ecc memory doctor` | unified-memory / `scripts/memory.js` | Audit malformed files, duplicate IDs, broken links, and symlinks |
+| `ecc-memory-mcp` | unified-memory / `scripts/memory-mcp.mjs` | Optional stdio MCP adapter; exposes save/search/read/doctor only |
 
 ## Direct-Use Agents
 
@@ -58,7 +72,15 @@ This document lists each slash command and the primary agent(s) or skills it inv
 - **verification-loop**: `/checkpoint`, `/verify`
 - **eval-harness**: `/eval`
 - **security-scan**: `/security-scan` (runs AgentShield)
+- **skill-host-compat**: `/skill-host-compat`
 - **strategic-compact**: suggested at compaction points (hooks)
+- **unified-memory**: `ecc memory ...` and the opt-in `ecc-memory-mcp` server
+
+## Direct-Use Skills
+
+| Skill | Purpose | Entry point |
+|-------|---------|-------------|
+| [osint-investigation](../skills/osint-investigation/SKILL.md) | Public-source investigation methodology: competing hypotheses, falsification, visual verification, and evidence tracking | Invoke the self-contained skill directly using available host capabilities. |
 
 ## How to use this map
 

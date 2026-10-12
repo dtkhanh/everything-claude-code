@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { resolveWindowsBashCandidates } = require('../lib/windows-bash');
 
 const OBSERVE_RELATIVE_PATH = path.join('skills', 'continuous-learning-v2', 'hooks', 'observe.sh');
 const DEFAULT_TIMEOUT_MS = 9000;
@@ -51,7 +52,9 @@ function findShellBinary() {
   }
 
   if (process.platform === 'win32') {
-    candidates.push('bash.exe', 'bash', 'sh');
+    // Absolute paths, skipping WSL launchers: WSL cannot open the /c/... path
+    // toShellPath() hands the shell, so observe.sh would fail on every call.
+    candidates.push(...resolveWindowsBashCandidates(['bash.exe', 'bash', 'sh']));
   } else {
     candidates.push('bash', 'sh');
   }
@@ -61,7 +64,10 @@ function findShellBinary() {
       stdio: 'ignore',
       windowsHide: true
     });
-    if (!probe.error) {
+    // Require the probe to actually succeed, not just spawn: Windows'
+    // System32\bash.exe (WSL launcher) spawns even with no distro installed but
+    // exits non-zero, so `!probe.error` alone would treat it as a usable shell.
+    if (!probe.error && probe.status === 0) {
       return candidate;
     }
   }

@@ -1,6 +1,7 @@
 ---
 name: blueprint
-description: 将单行目标转化为多会话、多代理工程项目的分步构建计划。每个步骤包含独立的上下文简介，以便新代理能直接执行。包括对抗性审查门、依赖图、并行步骤检测、反模式目录和计划突变协议。触发条件：当用户请求复杂多PR任务的计划、蓝图或路线图，或描述需要多个会话的工作时。不触发条件：任务可在单个PR或少于3个工具调用中完成，或用户说“直接执行”时。origin: community
+description: 将单行目标转化为多会话、多代理工程项目的分步构建计划。每个步骤包含独立的上下文简介，以便新代理能直接执行。包括对抗性审查门、依赖图、并行步骤检测、反模式目录和计划突变协议。触发条件：当用户请求复杂多PR任务的计划、蓝图或路线图，或描述需要多个会话的工作时。不触发条件：任务可在单个PR或少于3个工具调用中完成，或用户说“直接执行”时。
+origin: community
 ---
 
 # Blueprint — 施工计划生成器
@@ -63,7 +64,7 @@ Blueprint 自动检测 git/gh 可用性。如果具备 git + GitHub CLI，它会
 
 ## 安装
 
-此技能随 Everything Claude Code 附带。安装 ECC 时无需单独安装。
+此技能随 ECC 附带。安装 ECC 时无需单独安装。
 
 ### 完整 ECC 安装
 
@@ -76,7 +77,7 @@ test -f skills/blueprint/SKILL.md
 后续更新时，请在更新前查看 ECC 的差异：
 
 ```bash
-cd /path/to/everything-claude-code
+cd /path/to/ECC
 git fetch origin main
 git log --oneline HEAD..origin/main       # review new commits before updating
 git checkout <reviewed-full-sha>          # pin to a specific reviewed commit

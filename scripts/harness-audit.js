@@ -3,6 +3,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {
+  countPythonTestFiles,
+  gitignoreIgnoresEnvFiles,
+  hasPythonTestSuite,
+} = require('./lib/harness-audit-consumer');
 
 const CATEGORIES = [
   'Tool Coverage',
@@ -12,7 +17,52 @@ const CATEGORIES = [
   'Eval Coverage',
   'Security Guardrails',
   'Cost Efficiency',
+  'GitHub Integration',
+  'Vercel Integration',
+  'Netlify Integration',
+  'Cloudflare Integration',
+  'Fly Integration',
 ];
+
+const RUBRIC_VERSION = '2026-05-19';
+
+const PROVIDERS = {
+  Vercel: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'vercel.json') ||
+      fileExists(rootDir, '.vercel/project.json') ||
+      fileExists(rootDir, '.vercel'),
+    keyPattern: /vercel/i,
+    buildPattern: /vercel/i,
+    workflowPattern: /(vercel-action|vercel\s+(deploy|--prod))/i,
+  },
+  Netlify: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'netlify.toml') || fileExists(rootDir, '.netlify'),
+    keyPattern: /netlify/i,
+    buildPattern: /netlify/i,
+    workflowPattern: /(netlify\/actions|netlify\s+deploy)/i,
+  },
+  Cloudflare: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'wrangler.toml') || fileExists(rootDir, 'wrangler.jsonc'),
+    keyPattern: /\b(cloudflare|wrangler)\b/i,
+    buildPattern: /(wrangler|cloudflare)/i,
+    workflowPattern: /(cloudflare\/wrangler-action|wrangler\s+(deploy|publish))/i,
+  },
+  Fly: {
+    detect: (rootDir) => fileExists(rootDir, 'fly.toml'),
+    keyPattern: /fly[_-]?(api|io)/i,
+    buildPattern: /fly\s+(deploy|launch)/i,
+    workflowPattern: /(superfly\/flyctl-actions|flyctl\s+deploy|fly\s+deploy)/i,
+  },
+};
+
+function getApplicableProviders(rootDir) {
+  return Object.entries(PROVIDERS)
+    .filter(([_, spec]) => spec.detect(rootDir))
+    .map(([name]) => name);
+}
 
 function normalizeScope(scope) {
   const value = (scope || 'repo').toLowerCase();
@@ -171,7 +221,8 @@ function hasFileWithExtension(rootDir, relativeDir, extensions) {
 
 function detectTargetMode(rootDir) {
   const packageJson = safeParseJson(safeRead(rootDir, 'package.json'));
-  if (packageJson?.name === 'everything-claude-code') {
+  // 'everything-claude-code' is the legacy package name, kept for older checkouts.
+  if (['ecc-universal', 'everything-claude-code'].includes(packageJson?.name)) {
     return 'repo';
   }
 
@@ -187,6 +238,8 @@ function detectTargetMode(rootDir) {
   return 'consumer';
 }
 
+// The everything-claude-code entries below are legacy install ids, kept so
+// existing 1.x installs are still detected.
 const ECC_PLUGIN_KEY_PATTERNS = [
   /^ecc@/i,
   /^everything-claude-code@/i,
@@ -341,7 +394,7 @@ function findPluginInstall(rootDir) {
 }
 
 function getRepoChecks(rootDir) {
-  const packageJson = JSON.parse(readText(rootDir, 'package.json'));
+  const packageJson = safeParseJson(safeRead(rootDir, 'package.json'));
   const commandPrimary = safeRead(rootDir, 'commands/harness-audit.md').trim();
   const commandParity = safeRead(rootDir, '.opencode/commands/harness-audit.md').trim();
   const hooksJson = safeRead(rootDir, 'hooks/hooks.json');
@@ -454,7 +507,7 @@ function getRepoChecks(rootDir) {
       scopes: ['repo'],
       path: 'package.json',
       description: 'Test script runs validator chain before tests',
-      pass: typeof packageJson.scripts?.test === 'string' && packageJson.scripts.test.includes('validate-commands.js') && packageJson.scripts.test.includes('tests/run-all.js'),
+      pass: typeof packageJson?.scripts?.test === 'string' && packageJson?.scripts?.test.includes('validate-commands.js') && packageJson?.scripts?.test.includes('tests/run-all.js'),
       fix: 'Update package.json test script to run validators plus tests/run-all.js.',
     },
     {
@@ -607,7 +660,170 @@ function getRepoChecks(rootDir) {
       pass: fileExists(rootDir, 'commands/model-route.md'),
       fix: 'Add commands/model-route.md and route policies for cheap-default execution.',
     },
+    ...buildGithubChecks(rootDir),
   ];
+}
+
+// GitHub Integration is intentionally repo-scoped. Scoped audits such as hooks,
+// skills, commands, and agents should keep reporting only that surface.
+function buildGithubChecks(rootDir) {
+  return [
+    {
+      id: 'github-workflows',
+      category: 'GitHub Integration',
+      points: 3,
+      scopes: ['repo'],
+      path: '.github/workflows/',
+      description: 'GitHub Actions workflows are checked in',
+      pass: hasFileWithExtension(rootDir, '.github/workflows', ['.yml', '.yaml']),
+      fix: 'Add at least one workflow under .github/workflows/ so CI runs on every PR.',
+    },
+    {
+      id: 'github-pr-template',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/PULL_REQUEST_TEMPLATE.md',
+      description: 'A pull request template is configured',
+      pass:
+        fileExists(rootDir, '.github/PULL_REQUEST_TEMPLATE.md') ||
+        fileExists(rootDir, '.github/pull_request_template.md'),
+      fix: 'Add .github/PULL_REQUEST_TEMPLATE.md so PR descriptions follow a consistent shape.',
+    },
+    {
+      id: 'github-issue-templates',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/ISSUE_TEMPLATE/',
+      description: 'Issue templates are configured',
+      pass: hasFileWithExtension(rootDir, '.github/ISSUE_TEMPLATE', ['.md', '.yml', '.yaml']),
+      fix: 'Add at least one issue template under .github/ISSUE_TEMPLATE/.',
+    },
+    {
+      id: 'github-codeowners',
+      category: 'GitHub Integration',
+      points: 1,
+      scopes: ['repo'],
+      path: '.github/CODEOWNERS',
+      description: 'A CODEOWNERS file routes reviews',
+      pass:
+        fileExists(rootDir, 'CODEOWNERS') ||
+        fileExists(rootDir, '.github/CODEOWNERS') ||
+        fileExists(rootDir, 'docs/CODEOWNERS'),
+      fix: 'Add a CODEOWNERS file so PRs auto-request the right reviewers.',
+    },
+    {
+      id: 'github-dep-updates',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/dependabot.yml',
+      description: 'Automated dependency updates are configured',
+      pass:
+        fileExists(rootDir, '.github/dependabot.yml') ||
+        fileExists(rootDir, '.github/dependabot.yaml') ||
+        fileExists(rootDir, 'renovate.json') ||
+        fileExists(rootDir, '.github/renovate.json') ||
+        fileExists(rootDir, '.renovaterc'),
+      fix: 'Add a Dependabot or Renovate config so dependency updates land automatically.',
+    },
+  ];
+}
+
+function readAllWorkflowsText(rootDir) {
+  const dir = path.join(rootDir, '.github/workflows');
+  if (!fs.existsSync(dir)) {
+    return '';
+  }
+
+  const stack = [dir];
+  let combined = '';
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const nextPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(nextPath);
+      } else if (entry.name.endsWith('.yml') || entry.name.endsWith('.yaml')) {
+        try {
+          combined += `${fs.readFileSync(nextPath, 'utf8')}\n`;
+        } catch (_error) {
+          // Ignore unreadable workflow files; the finding should stay deterministic.
+        }
+      }
+    }
+  }
+
+  return combined;
+}
+
+function buildProviderChecks(rootDir, provider, sharedContext) {
+  const spec = PROVIDERS[provider];
+  const packageJson = sharedContext.packageJson || {};
+  const scriptsText = Object.values(packageJson.scripts || {}).join('\n');
+  const category = `${provider} Integration`;
+
+  return [
+    {
+      id: `${provider.toLowerCase()}-config`,
+      category,
+      points: 3,
+      scopes: ['repo'],
+      path: `${provider} config`,
+      description: `${provider} deployment config is checked in`,
+      pass: spec.detect(rootDir),
+      fix: `Commit ${provider} configuration so deploys are reproducible from source.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-build-script`,
+      category,
+      points: 2,
+      scopes: ['repo'],
+      path: 'package.json scripts',
+      description: `package.json scripts reference ${provider}`,
+      pass: spec.buildPattern.test(scriptsText),
+      fix: `Add a build or deploy script in package.json that runs ${provider}.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-env-doc`,
+      category,
+      points: 2,
+      scopes: ['repo'],
+      path: '.env.example',
+      description: `${provider} env keys are documented in .env.example`,
+      pass: spec.keyPattern.test(sharedContext.envExample),
+      fix: `Document ${provider} environment variables in .env.example.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-workflow-uses`,
+      category,
+      points: 3,
+      scopes: ['repo'],
+      path: '.github/workflows/',
+      description: `A GitHub workflow uses the ${provider} action or CLI`,
+      pass: spec.workflowPattern.test(sharedContext.workflowsText),
+      fix: `Reference the ${provider} action or CLI from a workflow under .github/workflows/.`,
+    },
+  ];
+}
+
+function collectProviderChecks(rootDir, packageJson) {
+  const providers = getApplicableProviders(rootDir);
+  if (providers.length === 0) {
+    return [];
+  }
+
+  const sharedContext = {
+    packageJson: packageJson || {},
+    envExample: `${safeRead(rootDir, '.env.example')}\n${safeRead(rootDir, '.env.sample')}`,
+    workflowsText: readAllWorkflowsText(rootDir),
+  };
+
+  return providers.flatMap(provider => buildProviderChecks(rootDir, provider, sharedContext));
 }
 
 function getConsumerChecks(rootDir) {
@@ -615,6 +831,7 @@ function getConsumerChecks(rootDir) {
   const gitignore = safeRead(rootDir, '.gitignore');
   const projectHooks = safeRead(rootDir, '.claude/settings.json');
   const pluginInstall = findPluginInstall(rootDir);
+  const pythonTestCount = countPythonTestFiles(rootDir);
 
   return [
     {
@@ -623,7 +840,7 @@ function getConsumerChecks(rootDir) {
       points: 4,
       scopes: ['repo'],
       path: '~/.claude/plugins/ecc/ (legacy everything-claude-code paths also supported)',
-      description: 'Everything Claude Code is installed for the active user or project',
+      description: 'ECC is installed for the active user or project',
       pass: Boolean(pluginInstall),
       fix: 'Install the ECC plugin for this user or project before auditing project-specific harness quality.',
     },
@@ -668,7 +885,10 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'tests/',
       description: 'The project has an automated test entrypoint',
-      pass: typeof packageJson?.scripts?.test === 'string' || countFiles(rootDir, 'tests', '.test.js') > 0 || hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts']),
+      pass: typeof packageJson?.scripts?.test === 'string' ||
+        countFiles(rootDir, 'tests', '.test.js') > 0 ||
+        hasFileWithExtension(rootDir, '.', ['.spec.js', '.spec.ts', '.test.ts']) ||
+        hasPythonTestSuite(rootDir, pythonTestCount),
       fix: 'Add a test script or checked-in tests so harness recommendations can be verified automatically.',
     },
     {
@@ -698,7 +918,8 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: 'evals/',
       description: 'The project has evals or multiple automated tests',
-      pass: countFiles(rootDir, 'evals', null) > 0 || countFiles(rootDir, 'tests', '.test.js') >= 3,
+      pass: countFiles(rootDir, 'evals', null) > 0 ||
+        countFiles(rootDir, 'tests', '.test.js') + pythonTestCount >= 3,
       fix: 'Add eval fixtures or at least a few focused automated tests for critical flows.',
     },
     {
@@ -718,7 +939,7 @@ function getConsumerChecks(rootDir) {
       scopes: ['repo'],
       path: '.gitignore',
       description: 'The project ignores common secret env files',
-      pass: gitignore.includes('.env'),
+      pass: gitignoreIgnoresEnvFiles(gitignore),
       fix: 'Ignore .env-style files in .gitignore so secrets do not land in the repo.',
     },
     {
@@ -731,6 +952,8 @@ function getConsumerChecks(rootDir) {
       pass: projectHooks.includes('PreToolUse') || projectHooks.includes('beforeSubmitPrompt') || fileExists(rootDir, '.claude/hooks.json'),
       fix: 'Add project-local hook settings or hook definitions for prompt/tool guardrails.',
     },
+    ...buildGithubChecks(rootDir),
+    ...collectProviderChecks(rootDir, packageJson),
   ];
 }
 
@@ -764,6 +987,7 @@ function buildReport(scope, options = {}) {
   const overallScore = checks
     .filter(check => check.pass)
     .reduce((sum, check) => sum + check.points, 0);
+  const applicableCategories = CATEGORIES.filter(name => categoryScores[name]?.max > 0);
 
   const failedChecks = checks.filter(check => !check.pass);
   const topActions = failedChecks
@@ -781,10 +1005,12 @@ function buildReport(scope, options = {}) {
     root_dir: rootDir,
     target_mode: targetMode,
     deterministic: true,
-    rubric_version: '2026-03-30',
+    rubric_version: RUBRIC_VERSION,
     overall_score: overallScore,
     max_score: maxScore,
     categories: categoryScores,
+    applicable_categories: applicableCategories,
+    category_count: applicableCategories.length,
     checks: checks.map(check => ({
       id: check.id,
       category: check.category,

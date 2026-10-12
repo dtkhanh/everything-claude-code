@@ -2,7 +2,7 @@
 
 Community-reported workarounds for current Claude Code bugs that can affect ECC users.
 
-These are upstream Claude Code behaviors, not ECC bugs. The entries below summarize the production-tested workarounds collected in [issue #644](https://github.com/affaan-m/everything-claude-code/issues/644) on Claude Code `v2.1.79` (macOS, heavy hook usage, MCP connectors enabled). Treat them as pragmatic stopgaps until upstream fixes land.
+These are upstream Claude Code behaviors, not ECC bugs. The entries below summarize the production-tested workarounds collected in [issue #644](https://github.com/affaan-m/ECC/issues/644) on Claude Code `v2.1.79` (macOS, heavy hook usage, MCP connectors enabled). Treat them as pragmatic stopgaps until upstream fixes land.
 
 ## Community Workarounds For Open Claude Code Bugs
 
@@ -67,9 +67,34 @@ exit 2
 - Disable unused MCP servers per project.
 - Compact manually at natural breakpoints instead of waiting for auto-compaction.
 
+## ECC Dashboard Does Not Start
+
+**Symptoms:** `npm run dashboard` or `python3 ecc_dashboard.py` fails, often with `ModuleNotFoundError: No module named 'tkinter'`.
+
+**What helps:**
+
+- The GUI dashboard needs Tkinter, which many Python installs omit:
+  - Debian/Ubuntu: `sudo apt-get install python3-tk`
+  - Fedora: `sudo dnf install python3-tkinter`
+  - macOS (Homebrew): `brew install python-tk`
+  - Windows: re-run the python.org installer and enable "tcl/tk and IDLE"
+- Or use the browser dashboard, which only needs Node: `npm run dashboard:web`, then open the printed localhost URL.
+- Both commands must be run from a full clone of the ECC repo (`git clone https://github.com/affaan-m/ECC`), not from inside the Claude Code plugin directory — plugin installs do not ship `package.json` scripts.
+
+## Anthropic Cyber Safeguards Block Security Audits Of Your Own Code
+
+**Symptoms:** Running security reviews/audits (e.g. `ecc:security-reviewer`) fails with an API error citing the Usage Policy and "cyber-related safeguards", even though you are auditing your own codebase.
+
+**What helps:**
+
+- This is an upstream Anthropic model-level safeguard, not GateGuard and not an ECC block. No ECC configuration can bypass it.
+- Apply to Anthropic's [Cyber Verification Program](https://claude.com/form/cyber-use-case) — the error message includes a tokenized link for your account. Approved accounts get legitimate security workflows unblocked.
+- Until approved, structure prompts defensively: state up front that you own the code and the goal is remediation ("review this module I own for vulnerabilities and propose fixes"), keep scope to one module at a time, and avoid exploit-generation phrasing ("write a PoC", "craft a payload").
+- Prefer remediation-oriented skills (`security-review`, `security-scan`) over offensive framing, and run static tooling (semgrep, bandit, `npm audit`) yourself, then ask the model to interpret results.
+
 ## Related ECC Docs
 
 - [hook-bug-workarounds.md](./hook-bug-workarounds.md) for the shorter hook/compaction/MCP recovery checklist.
 - [hooks/README.md](../hooks/README.md) for ECC's documented hook lifecycle and exit-code behavior.
 - [token-optimization.md](./token-optimization.md) for cost and context management settings.
-- [issue #644](https://github.com/affaan-m/everything-claude-code/issues/644) for the original report and tested environment.
+- [issue #644](https://github.com/affaan-m/ECC/issues/644) for the original report and tested environment.

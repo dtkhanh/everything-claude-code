@@ -1356,7 +1356,12 @@ fn dependency_fingerprint(root: &Path, files: &[&str]) -> Result<String> {
         hasher.update(&content);
         hasher.update([0xff]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 output arrays no longer implement LowerHex; hex-encode manually.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn is_symlink_to(path: &Path, target: &Path) -> Result<bool> {
@@ -2539,8 +2544,19 @@ mod tests {
             &["remote", "add", "origin", "git@github.com:example/ecc.git"],
         )?;
 
+        let linked_path = root.join("worker");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "ecc/worker-123",
+                linked_path.to_str().expect("utf8 path"),
+            ],
+        )?;
         let worktree = WorktreeInfo {
-            path: repo.clone(),
+            path: linked_path,
             branch: "ecc/worker-123".to_string(),
             base_branch: "main".to_string(),
         };

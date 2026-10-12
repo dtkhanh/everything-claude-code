@@ -7,6 +7,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 
 // Import the module
@@ -115,7 +116,79 @@ function runTests() {
     const sessionsDir = utils.getSessionsDir();
     const claudeDir = utils.getClaudeDir();
     assert.ok(sessionsDir.startsWith(claudeDir), 'Sessions should be under Claude dir');
-    assert.ok(sessionsDir.endsWith(path.join('.claude', 'session-data')) || sessionsDir.endsWith('/.claude/session-data'), 'Should use canonical session-data directory');
+    assert.ok(sessionsDir.endsWith('session-data'), 'Should use canonical session-data directory');
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome honors ECC_AGENT_DATA_HOME', () => {
+    const original = process.env.ECC_AGENT_DATA_HOME;
+    const overrideRoot = path.join(utils.getTempDir(), `ecc-agent-data-${Date.now()}`);
+    try {
+      process.env.ECC_AGENT_DATA_HOME = overrideRoot;
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      const reloaded = require('../../scripts/lib/utils');
+      assert.strictEqual(reloaded.getAgentDataHome(), path.resolve(overrideRoot));
+      assert.strictEqual(reloaded.getClaudeDir(), path.resolve(overrideRoot));
+      assert.strictEqual(
+        reloaded.getSessionsDir(),
+        path.join(path.resolve(overrideRoot), 'session-data')
+      );
+      assert.strictEqual(
+        reloaded.getLearnedSkillsDir(),
+        path.join(path.resolve(overrideRoot), 'skills', 'learned')
+      );
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      if (original === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = original;
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome defaults to ~/.cursor/ecc when CURSOR_VERSION is set', () => {
+    const originalVersion = process.env.CURSOR_VERSION;
+    const originalHome = process.env.ECC_AGENT_DATA_HOME;
+    try {
+      delete process.env.ECC_AGENT_DATA_HOME;
+      process.env.CURSOR_VERSION = 'test-cursor';
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      delete require.cache[require.resolve('../../scripts/lib/agent-data-home')];
+      const reloaded = require('../../scripts/lib/utils');
+      const expected = path.join(reloaded.getHomeDir(), '.cursor', 'ecc');
+      assert.strictEqual(reloaded.getAgentDataHome(), expected);
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      delete require.cache[require.resolve('../../scripts/lib/agent-data-home')];
+      if (originalVersion === undefined) {
+        delete process.env.CURSOR_VERSION;
+      } else {
+        process.env.CURSOR_VERSION = originalVersion;
+      }
+      if (originalHome === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = originalHome;
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome expands tilde in ECC_AGENT_DATA_HOME', () => {
+    const original = process.env.ECC_AGENT_DATA_HOME;
+    try {
+      process.env.ECC_AGENT_DATA_HOME = path.join('~', '.cursor', 'ecc-test');
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      const reloaded = require('../../scripts/lib/utils');
+      const expected = path.join(reloaded.getHomeDir(), '.cursor', 'ecc-test');
+      assert.strictEqual(reloaded.getAgentDataHome(), expected);
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      if (original === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = original;
+      }
+    }
   })) passed++; else failed++;
 
   if (test('getSessionSearchDirs includes canonical and legacy paths', () => {
@@ -169,6 +242,80 @@ function runTests() {
   if (test('getProjectName returns non-empty string', () => {
     const name = utils.getProjectName();
     assert.ok(name && name.length > 0);
+  })) passed++; else failed++;
+
+  // Repository identity tests (#3160 Windows path forms)
+  console.log('\nRepository Identity:');
+
+  if (test('getRepoIdentity resolves a mocked relative git output against dir', () => {
+    const fakeGit = () => ({ success: true, output: '.git' });
+    const id = utils.getRepoIdentity('/definitely/missing/repo', fakeGit);
+    assert.strictEqual(id, path.resolve('/definitely/missing/repo', '.git'));
+  })) passed++; else failed++;
+
+  if (test('getRepoIdentity returns null when git fails', () => {
+    const fakeGit = () => ({ success: false, output: 'not a git repository' });
+    assert.strictEqual(utils.getRepoIdentity('/definitely/missing/repo', fakeGit), null);
+  })) passed++; else failed++;
+
+  if (test('normalizeRepoPath treats Windows-shaped paths equal across case and separators', () => {
+    // Windows-shaped git output: 8.3 short name, backslashes, mixed case.
+    // Runs on any OS; the platform argument selects the case-insensitive rule.
+    const a = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\repo\\.git';
+    const b = 'c:/users/runner~1/appdata/local/temp/repo/.git';
+    assert.strictEqual(
+      utils.normalizeRepoPath(a, 'win32'),
+      utils.normalizeRepoPath(b, 'win32')
+    );
+  })) passed++; else failed++;
+
+  if (test('normalizeRepoPath strips trailing slashes and keeps case off win32', () => {
+    const a = utils.normalizeRepoPath('X:/Repo/Main/.git/', 'linux');
+    const b = utils.normalizeRepoPath('X:/Repo/Main/.git', 'linux');
+    assert.strictEqual(a, b);
+    assert.ok(!/\.git\/$/.test(a));
+    assert.ok(a.includes('Repo'), 'linux normalization must not lowercase');
+  })) passed++; else failed++;
+
+  if (test('sameRepoIdentity matches a hard link by filesystem identity', () => {
+    // dev+ino fallback: different path strings, same file. This is what
+    // rescues 8.3 short-name versus long-name mismatches on Windows.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-repoid-'));
+    try {
+      const orig = path.join(dir, 'a');
+      const link = path.join(dir, 'b');
+      fs.writeFileSync(orig, 'x');
+      fs.linkSync(orig, link);
+      assert.ok(utils.sameRepoIdentity(orig, link));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('sameRepoIdentity rejects different files and missing paths', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-repoid-'));
+    try {
+      const a = path.join(dir, 'a');
+      const b = path.join(dir, 'b');
+      fs.writeFileSync(a, 'x');
+      fs.writeFileSync(b, 'y');
+      assert.ok(!utils.sameRepoIdentity(a, b));
+      assert.ok(!utils.sameRepoIdentity(a, path.join(dir, 'missing')));
+      assert.ok(!utils.sameRepoIdentity('', b));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('sameRepoIdentity compares full-width filesystem IDs', () => {
+    const originalStat = fs.statSync;
+    try {
+      fs.statSync = (file, options) => {
+        assert.equal(options?.bigint, true);
+        return { dev: 1n, ino: file.endsWith('first') ? 9007199254740993n : 9007199254740994n };
+      };
+      assert.ok(!utils.sameRepoIdentity('/missing/first', '/missing/second'));
+    } finally { fs.statSync = originalStat; }
   })) passed++; else failed++;
 
   // sanitizeSessionId tests
@@ -1042,16 +1189,92 @@ function runTests() {
       return true;
     }
     const { execFileSync } = require('child_process');
-    // maxSize is a chunk-level guard: once data.length >= maxSize, no MORE chunks are added.
-    // A single small chunk that arrives when data.length < maxSize is added in full.
-    // To test multi-chunk behavior, we send >64KB (Node default highWaterMark=16KB)
-    // which should arrive in multiple chunks. With maxSize=100, only the first chunk(s)
-    // totaling under 100 bytes should be captured; subsequent chunks are dropped.
+    // Send enough data to cross the chunk-level cap. The child must keep
+    // draining stdin until EOF so the parent does not see EPIPE on macOS.
     const script = 'const u=require("./scripts/lib/utils");u.readStdinJson({timeoutMs:2000,maxSize:100}).then(d=>{process.stdout.write(JSON.stringify(d))})';
-    // Generate 100KB of data (arrives in multiple chunks)
     const bigInput = '{"k":"' + 'X'.repeat(100000) + '"}';
     const result = execFileSync('node', ['-e', script], { ...stdinOpts, input: bigInput });
-    // Truncated mid-string → invalid JSON → resolves to {}
+    // Oversized input is rejected rather than parsing a partial JSON prefix.
+    assert.deepStrictEqual(JSON.parse(result), {});
+  })) passed++; else failed++;
+
+  if (test('readStdinJson overflow drain still exits when the writer never closes stdin', () => {
+    const { execFileSync } = require('child_process');
+    const childScript = [
+      'const u=require("./scripts/lib/utils");',
+      'u.readStdinJson({timeoutMs:100,maxSize:100})',
+      '.then(d=>process.stdout.write(JSON.stringify(d)));'
+    ].join('');
+    const harness = `
+      const { spawn } = require('child_process');
+      const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], {
+        cwd: process.cwd(),
+        stdio: ['pipe', 'pipe', 'inherit']
+      });
+      let stdout = '';
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stdin.write('X'.repeat(100000));
+      const deadline = setTimeout(() => {
+        child.kill();
+        process.exit(2);
+      }, 1000);
+      child.on('exit', code => {
+        clearTimeout(deadline);
+        if (code !== 0) process.exit(code || 1);
+        process.stdout.write(stdout);
+      });
+    `;
+    const result = execFileSync('node', ['-e', harness], {
+      ...stdinOpts,
+      timeout: 2000
+    });
+    assert.deepStrictEqual(JSON.parse(result), {});
+  })) passed++; else failed++;
+
+  if (test('readStdinJson drains a slow finite oversized writer without EPIPE', () => {
+    const { execFileSync } = require('child_process');
+    const childScript = [
+      'const u=require("./scripts/lib/utils");',
+      'u.readStdinJson({timeoutMs:500,maxSize:100})',
+      '.then(d=>process.stdout.write(JSON.stringify(d)));'
+    ].join('');
+    const harness = `
+      const { spawn } = require('child_process');
+      const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], {
+        cwd: process.cwd(),
+        stdio: ['pipe', 'pipe', 'inherit']
+      });
+      let stdout = '';
+      let writes = 0;
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stdin.on('error', () => process.exit(3));
+      const writer = setInterval(() => {
+        writes += 1;
+        child.stdin.write('X'.repeat(5000));
+        if (writes === 20) {
+          clearInterval(writer);
+          child.stdin.end();
+        }
+      }, 5);
+      const deadline = setTimeout(() => {
+        child.kill();
+        process.exit(2);
+      }, 1500);
+      child.on('exit', code => {
+        clearInterval(writer);
+        clearTimeout(deadline);
+        if (code !== 0) process.exit(code || 1);
+        process.stdout.write(stdout);
+      });
+    `;
+    const result = execFileSync('node', ['-e', harness], {
+      ...stdinOpts,
+      // Budget for starting the outer Node process on a loaded Windows host.
+      // The writer/child deadline above still bounds the actual drain to 1.5s.
+      timeout: 15000
+    });
     assert.deepStrictEqual(JSON.parse(result), {});
   })) passed++; else failed++;
 
@@ -1415,7 +1638,19 @@ function runTests() {
     const realFile = path.join(tmpDir, 'real.txt');
     fs.writeFileSync(realFile, 'content');
     const brokenLink = path.join(tmpDir, 'broken.txt');
-    fs.symlinkSync('/nonexistent/path/does/not/exist', brokenLink);
+    try {
+      fs.symlinkSync('/nonexistent/path/does/not/exist', brokenLink);
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
 
     try {
       const results = utils.findFiles(tmpDir, '*.txt');

@@ -5,8 +5,12 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-const { run, evaluateConditions, detectLoop, severityLabel } = require('../../scripts/hooks/ecc-context-monitor');
+const { run, evaluateConditions, detectLoop, severityLabel, costWarningsEnabled } = require('../../scripts/hooks/ecc-context-monitor');
+const { getBridgePath, writeBridgeAtomic } = require('../../scripts/lib/session-bridge');
 
 // Test helper
 function test(name, fn) {
@@ -18,6 +22,18 @@ function test(name, fn) {
     console.log(`  \u2717 ${name}`);
     console.log(`    Error: ${err.message}`);
     return false;
+  }
+}
+
+function withEnv(name, value, fn) {
+  const original = process.env[name];
+  try {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+    return fn();
+  } finally {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
   }
 }
 
@@ -113,6 +129,87 @@ function runTests() {
     passed++;
   else failed++;
 
+  if (
+    test('cost warnings can be suppressed without hiding context warnings', () => {
+      const warnings = evaluateConditions({ total_cost_usd: 55, context_remaining_pct: 20 }, { costWarnings: false });
+      assert.strictEqual(warnings.find(w => w.type === 'cost'), undefined);
+      const ctx = warnings.find(w => w.type === 'context');
+      assert.ok(ctx, 'Expected context warning to remain enabled');
+      assert.strictEqual(ctx.severity, 3);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('ECC_CONTEXT_MONITOR_COST_WARNINGS=off disables only run-time cost warnings', () => {
+      const sessionId = `ctx-monitor-cost-off-${process.pid}-${Date.now()}`;
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      try {
+        writeBridgeAtomic(sessionId, {
+          context_remaining_pct: 20,
+          total_cost_usd: 55,
+          last_timestamp: new Date().toISOString()
+        });
+        const result = withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', () => JSON.parse(run(input)));
+        const message = result.hookSpecificOutput.additionalContext;
+        assert.ok(message.includes('CONTEXT CRITICAL'), 'Expected context warning to remain');
+        assert.ok(!message.includes('COST CRITICAL'), 'Expected cost warning to be suppressed');
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost warning env defaults on and accepts false-like values', () => {
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', undefined, () => costWarningsEnabled()), true);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'false', () => costWarningsEnabled()), false);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', '0', () => costWarningsEnabled()), false);
+      assert.strictEqual(withEnv('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'yes', () => costWarningsEnabled()), true);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('cost warnings dedupe by tier: notice fires once, re-fires on escalation', () => {
+      const sessionId = `ctx-monitor-tier-dedupe-${process.pid}-${Date.now()}`;
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      const setCost = cost =>
+        writeBridgeAtomic(sessionId, { total_cost_usd: cost, last_timestamp: new Date().toISOString() });
+      try {
+        setCost(6);
+        const first = run(input);
+        assert.ok(
+          JSON.parse(first).hookSpecificOutput.additionalContext.includes('COST NOTICE'),
+          'first crossing of the notice threshold must emit'
+        );
+
+        setCost(6.4); // cost ticks up within the same tier — must stay silent
+        const second = run(input);
+        assert.strictEqual(second, input, 'same tier must not re-emit on every cost tick');
+
+        setCost(12); // tier escalation notice → warning must re-emit
+        const third = run(input);
+        assert.ok(
+          JSON.parse(third).hookSpecificOutput.additionalContext.includes('COST WARNING'),
+          'tier escalation must re-emit'
+        );
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // evaluateConditions — scope warnings
   console.log('\nevaluateConditions (scope):');
 
@@ -142,16 +239,30 @@ function runTests() {
   console.log('\ndetectLoop:');
 
   if (
-    test('3 identical entries returns detected true', () => {
-      const entries = [
-        { tool: 'Bash', hash: 'aabbccdd' },
-        { tool: 'Bash', hash: 'aabbccdd' },
-        { tool: 'Bash', hash: 'aabbccdd' }
-      ];
+    test('5 identical entries returns detected true', () => {
+      const entries = Array(5).fill({ tool: 'Bash', hash: 'aabbccdd' });
       const result = detectLoop(entries);
       assert.strictEqual(result.detected, true);
       assert.strictEqual(result.tool, 'Bash');
-      assert.ok(result.count >= 3);
+      assert.ok(result.count >= 5);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('4 identical among 5 entries returns detected false', () => {
+      // Legitimate repetition (retries, polling) must not fire: only a full
+      // ring buffer of identical calls counts as a stuck loop.
+      const entries = [
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'ffffffff' }
+      ];
+      const result = detectLoop(entries);
+      assert.strictEqual(result.detected, false);
     })
   )
     passed++;

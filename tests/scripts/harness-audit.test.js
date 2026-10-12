@@ -10,6 +10,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'harness-audit.js');
 const { parseArgs, findPluginInstall, compareVersionDesc } = require(SCRIPT);
+const { countPythonTestFiles } = require('../../scripts/lib/harness-audit-consumer');
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -126,7 +127,7 @@ function runTests() {
     const parsed = JSON.parse(run(['repo', '--format', 'json']));
 
     assert.strictEqual(parsed.deterministic, true);
-    assert.strictEqual(parsed.rubric_version, '2026-03-30');
+    assert.strictEqual(parsed.rubric_version, '2026-05-19');
     assert.strictEqual(parsed.target_mode, 'repo');
     assert.ok(parsed.overall_score >= 0);
     assert.ok(parsed.max_score > 0);
@@ -140,6 +141,192 @@ function runTests() {
     assert.ok(categoryNames.includes('Eval Coverage'));
     assert.ok(categoryNames.includes('Security Guardrails'));
     assert.ok(categoryNames.includes('Cost Efficiency'));
+    assert.ok(categoryNames.includes('GitHub Integration'));
+  })) passed++; else failed++;
+
+  if (test('report exposes applicable_categories and category_count', () => {
+    const parsed = JSON.parse(run(['repo', '--format', 'json']));
+
+    assert.ok(Array.isArray(parsed.applicable_categories), 'applicable_categories must be an array');
+    assert.ok(parsed.applicable_categories.length > 0);
+    assert.strictEqual(parsed.category_count, parsed.applicable_categories.length);
+    for (const name of parsed.applicable_categories) {
+      assert.ok(parsed.categories[name].max > 0, `${name} must have max > 0 to be applicable`);
+    }
+  })) passed++; else failed++;
+
+  if (test('GitHub Integration category scores against a fully-wired consumer fixture', () => {
+    const homeDir = createTempDir('harness-audit-home-gh-');
+    const projectRoot = createTempDir('harness-audit-project-gh-');
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+
+      fs.mkdirSync(path.join(projectRoot, '.github', 'workflows'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, '.github', 'ISSUE_TEMPLATE'), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, '.github', 'workflows', 'ci.yml'), 'name: ci\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'PULL_REQUEST_TEMPLATE.md'), '# PR\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'ISSUE_TEMPLATE', 'bug.md'), '# Bug\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'CODEOWNERS'), '* @owner\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'dependabot.yml'), 'version: 2\n');
+      fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'gh-test' }));
+
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      const github = parsed.categories['GitHub Integration'];
+
+      assert.ok(github, 'GitHub Integration category must exist');
+      assert.strictEqual(github.score, 10, `GitHub Integration should score 10/10, got ${github.score}`);
+      assert.strictEqual(github.earned, github.max);
+      assert.ok(parsed.applicable_categories.includes('GitHub Integration'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('provider categories are omitted unless a marker is present', () => {
+    const homeDir = createTempDir('harness-audit-home-no-provider-');
+    const projectRoot = createTempDir('harness-audit-project-no-provider-');
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+      fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'p' }));
+
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+
+      assert.ok(!parsed.applicable_categories.includes('Vercel Integration'));
+      const vercel = parsed.categories['Vercel Integration'];
+      assert.ok(!vercel || vercel.max === 0, 'Vercel Integration should not contribute when no marker');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Vercel Integration category scores when vercel.json present', () => {
+    const homeDir = createTempDir('harness-audit-home-vercel-');
+    const projectRoot = createTempDir('harness-audit-project-vercel-');
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+
+      fs.mkdirSync(path.join(projectRoot, '.github', 'workflows'), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, 'vercel.json'), '{}\n');
+      fs.writeFileSync(path.join(projectRoot, '.env.example'), 'VERCEL_TOKEN=\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'workflows', 'deploy.yml'), 'uses: amondnet/vercel-action@v25\n');
+      fs.writeFileSync(
+        path.join(projectRoot, 'package.json'),
+        JSON.stringify({ name: 'p', scripts: { build: 'next build', deploy: 'vercel deploy' } })
+      );
+
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      const vercel = parsed.categories['Vercel Integration'];
+
+      assert.ok(vercel, 'Vercel Integration category must exist when vercel.json present');
+      assert.ok(vercel.max > 0);
+      assert.ok(parsed.applicable_categories.includes('Vercel Integration'));
+      assert.strictEqual(vercel.score, 10, `Vercel should score 10/10 with full wiring, got ${vercel.score}`);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('detector map: Netlify, Cloudflare, Fly each trigger their category', () => {
+    const homeDir = createTempDir('harness-audit-home-multi-');
+
+    function probe(markerFile, markerContents, expectedCategory) {
+      const root = createTempDir('harness-audit-project-multi-');
+      try {
+        fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'p' }));
+        fs.writeFileSync(path.join(root, markerFile), markerContents);
+        const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: root, homeDir }));
+        assert.ok(
+          parsed.applicable_categories.includes(expectedCategory),
+          `${markerFile} should activate ${expectedCategory}`
+        );
+      } finally {
+        cleanup(root);
+      }
+    }
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+
+      probe('netlify.toml', '[build]\n', 'Netlify Integration');
+      probe('wrangler.toml', 'name = "p"\n', 'Cloudflare Integration');
+      probe('fly.toml', 'app = "p"\n', 'Fly Integration');
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('max_score reflects only applicable categories', () => {
+    const homeDir = createTempDir('harness-audit-home-max-');
+    const noVercel = createTempDir('harness-audit-project-max-novercel-');
+    const withVercel = createTempDir('harness-audit-project-max-vercel-');
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+
+      fs.writeFileSync(path.join(noVercel, 'package.json'), JSON.stringify({ name: 'p' }));
+      fs.writeFileSync(path.join(withVercel, 'package.json'), JSON.stringify({ name: 'p' }));
+      fs.writeFileSync(path.join(withVercel, 'vercel.json'), '{}\n');
+
+      const noVercelParsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: noVercel, homeDir }));
+      const withVercelParsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: withVercel, homeDir }));
+
+      assert.ok(
+        withVercelParsed.max_score > noVercelParsed.max_score,
+        `with-vercel max_score (${withVercelParsed.max_score}) should exceed no-vercel (${noVercelParsed.max_score})`
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(noVercel);
+      cleanup(withVercel);
+    }
+  })) passed++; else failed++;
+
+  if (test('non-git directory does not crash the script', () => {
+    const homeDir = createTempDir('harness-audit-home-bare-');
+    const bare = createTempDir('harness-audit-project-bare-');
+
+    try {
+      fs.mkdirSync(path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.claude', 'plugins', 'ecc', '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'ecc' }, null, 2)
+      );
+      fs.writeFileSync(path.join(bare, 'package.json'), JSON.stringify({ name: 'p' }));
+
+      const output = run(['repo', '--format', 'json'], { cwd: bare, homeDir });
+      const parsed = JSON.parse(output);
+      assert.ok(parsed.overall_score >= 0);
+      assert.ok(parsed.max_score > 0);
+    } finally {
+      cleanup(homeDir);
+      cleanup(bare);
+    }
   })) passed++; else failed++;
 
   if (test('scope filtering changes max score and check list', () => {
@@ -239,6 +426,303 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('combines Python and JavaScript tests for eval coverage', () => {
+    const homeDir = createTempDir('harness-audit-python-home-');
+    const projectRoot = createTempDir('harness-audit-python-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'qa'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'integration'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'tests'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, '.venv', 'tests'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'node_modules', 'pkg', 'tests'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pyproject.toml'),
+        '[tool.pytest.ini_options]\ntestpaths = ["qa", "integration"]\n'
+      );
+      fs.writeFileSync(path.join(projectRoot, 'qa', 'test_alpha.py'), 'def test_alpha(): pass\n');
+      fs.writeFileSync(path.join(projectRoot, 'qa', 'beta_test.py'), 'def test_beta(): pass\n');
+      fs.writeFileSync(path.join(projectRoot, 'tests', 'gamma.test.js'), 'test placeholder\n');
+      fs.writeFileSync(path.join(projectRoot, '.venv', 'tests', 'test_vendor.py'), '');
+      fs.writeFileSync(path.join(projectRoot, 'node_modules', 'pkg', 'tests', 'test_vendor.py'), '');
+
+      assert.strictEqual(countPythonTestFiles(projectRoot), 2);
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-test-suite' && check.pass));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-eval-coverage' && check.pass));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('recognizes standard pytest suite markers without JavaScript tests', () => {
+    const homeDir = createTempDir('harness-audit-python-markers-home-');
+    const fixtures = [
+      ['pytest.toml', ''],
+      ['.pytest.toml', ''],
+      ['pytest.ini', ''],
+      ['.pytest.ini', ''],
+      ['tox.ini', '[testenv]\ncommands = pytest\n'],
+      ['setup.cfg', '[tool:pytest]\n'],
+      ['quality/conftest.py', ''],
+      ['tests/test_smoke.py', 'def test_smoke(): pass\n'],
+    ];
+
+    try {
+      for (const [relativePath, contents] of fixtures) {
+        const projectRoot = createTempDir('harness-audit-python-marker-');
+        try {
+          fs.mkdirSync(path.dirname(path.join(projectRoot, relativePath)), { recursive: true });
+          fs.writeFileSync(path.join(projectRoot, relativePath), contents);
+          const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+          assert.ok(
+            parsed.checks.some(check => check.id === 'consumer-test-suite' && check.pass),
+            `${relativePath} should identify a Python test suite`
+          );
+        } finally {
+          cleanup(projectRoot);
+        }
+      }
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('supports spaced testpaths, custom python_files, and empty-path fallback', () => {
+    const homeDir = createTempDir('harness-audit-python-options-home-');
+    const projectRoot = createTempDir('harness-audit-python-options-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'quality suite'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'package'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, '.pytest.ini'),
+        '[pytest]\ntestpaths = "quality suite"\npython_files = check_*.py\n'
+      );
+      fs.writeFileSync(path.join(projectRoot, 'quality suite', 'check_one.py'), '');
+      fs.writeFileSync(path.join(projectRoot, 'quality suite', 'test_default.py'), '');
+      assert.strictEqual(countPythonTestFiles(projectRoot), 1);
+
+      fs.writeFileSync(
+        path.join(projectRoot, '.pytest.ini'),
+        '[pytest]\ntestpaths = missing/**\npython_files = check_*.py\n'
+      );
+      fs.writeFileSync(path.join(projectRoot, 'package', 'check_fallback.py'), '');
+      assert.strictEqual(countPythonTestFiles(projectRoot), 2);
+
+      fs.writeFileSync(path.join(projectRoot, 'pytest.toml'), '[pytest]\ntestpaths = ["package"]\npython_files = ["test_*.py"]\n');
+      assert.strictEqual(countPythonTestFiles(projectRoot), 0);
+
+      fs.mkdirSync(path.join(projectRoot, 'quality', 'empty'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pytest.toml'),
+        '[pytest]\ntestpaths = ["quality/*"]\n'
+      );
+      assert.strictEqual(countPythonTestFiles(projectRoot), 0);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('ignores non-string pytest TOML list entries without crashing', () => {
+    const homeDir = createTempDir('harness-audit-python-invalid-home-');
+    const projectRoot = createTempDir('harness-audit-python-invalid-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'tests'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pytest.toml'),
+        '[pytest]\ntestpaths = ["tests", 42]\npython_files = ["test_*.py", false]\n'
+      );
+      fs.writeFileSync(path.join(projectRoot, 'tests', 'test_valid.py'), '');
+
+      assert.strictEqual(countPythonTestFiles(projectRoot), 1);
+      assert.doesNotThrow(() => run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('supports testpaths that point directly to a test file', () => {
+    const projectRoot = createTempDir('harness-audit-python-file-path-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'quality'), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, 'quality', 'test_exact.py'), '');
+      fs.writeFileSync(
+        path.join(projectRoot, 'pytest.toml'),
+        '[pytest]\ntestpaths = ["quality/test_exact.py"]\n'
+      );
+      assert.strictEqual(countPythonTestFiles(projectRoot), 1);
+    } finally {
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uses pytest default discovery and active config precedence', () => {
+    const homeDir = createTempDir('harness-audit-python-default-home-');
+    const projectRoot = createTempDir('harness-audit-python-default-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'package'), { recursive: true });
+      for (const name of ['test_one.py', 'test_two.py', 'three_test.py']) {
+        fs.writeFileSync(path.join(projectRoot, 'package', name), '');
+      }
+      assert.strictEqual(countPythonTestFiles(projectRoot), 3);
+
+      fs.mkdirSync(path.join(projectRoot, 'active'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'inactive'), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, 'pytest.ini'), '[pytest]\ntestpaths = active\n');
+      fs.writeFileSync(
+        path.join(projectRoot, 'pyproject.toml'),
+        '[tool.pytest.ini_options]\ntestpaths = ["inactive"]\n'
+      );
+      fs.writeFileSync(path.join(projectRoot, 'active', 'test_active.py'), '');
+      fs.writeFileSync(path.join(projectRoot, 'inactive', 'test_inactive.py'), '');
+      assert.strictEqual(countPythonTestFiles(projectRoot), 1);
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-test-suite' && check.pass));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-eval-coverage' && !check.pass));
+
+      fs.writeFileSync(path.join(projectRoot, 'pytest.ini'), '[invalid]\nvalue = true\n');
+      assert.strictEqual(
+        countPythonTestFiles(projectRoot),
+        5,
+        'Existing pytest.ini must win by presence and use default root discovery'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not treat a lint-only tox configuration as a test suite', () => {
+    const homeDir = createTempDir('harness-audit-tox-home-');
+    const projectRoot = createTempDir('harness-audit-tox-project-');
+
+    try {
+      fs.writeFileSync(
+        path.join(projectRoot, 'tox.ini'),
+        '[tox]\nenvlist = lint\n[testenv:lint]\ndeps = pytest\ncommands = ruff check .\n'
+      );
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-test-suite' && !check.pass));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('counts tests from INI testpaths without scanning ignored dependency roots', () => {
+    const homeDir = createTempDir('harness-audit-python-ini-home-');
+    const projectRoot = createTempDir('harness-audit-python-ini-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'quality'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, '.venv', 'tests'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pytest.ini'),
+        '[pytest]\ntestpaths =\n    quality\n    .venv/tests\n'
+      );
+      for (const name of ['test_one.py', 'test_two.py', 'three_test.py']) {
+        fs.writeFileSync(path.join(projectRoot, 'quality', name), '');
+      }
+      fs.writeFileSync(path.join(projectRoot, '.venv', 'tests', 'test_vendor.py'), '');
+
+      assert.strictEqual(countPythonTestFiles(projectRoot), 3);
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-test-suite' && check.pass));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-eval-coverage' && check.pass));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('expands recursive glob patterns in pytest testpaths', () => {
+    const homeDir = createTempDir('harness-audit-python-glob-home-');
+    const projectRoot = createTempDir('harness-audit-python-glob-project-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'quality', 'unit'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pyproject.toml'),
+        '[tool.pytest.ini_options]\ntestpaths = ["quality/**"]\n'
+      );
+      for (const name of ['test_one.py', 'test_two.py', 'three_test.py']) {
+        fs.writeFileSync(path.join(projectRoot, 'quality', 'unit', name), '');
+      }
+
+      assert.strictEqual(countPythonTestFiles(projectRoot), 3);
+      const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+      assert.ok(parsed.checks.some(check => check.id === 'consumer-eval-coverage' && check.pass));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not fall back when a recursive testpath matches an empty directory', () => {
+    const projectRoot = createTempDir('harness-audit-python-empty-glob-');
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'quality'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'package'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'pytest.toml'),
+        '[pytest]\ntestpaths = ["quality/**"]\n'
+      );
+      for (const name of ['test_one.py', 'test_two.py', 'three_test.py']) {
+        fs.writeFileSync(path.join(projectRoot, 'package', name), '');
+      }
+
+      assert.strictEqual(countPythonTestFiles(projectRoot), 0);
+    } finally {
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('secret hygiene requires an active gitignore rule for env files', () => {
+    const homeDir = createTempDir('harness-audit-gitignore-home-');
+    const cases = [
+      ['# Do not commit .env files\nnode_modules/\n', false],
+      ['environment.json\n.envexample\n', false],
+      ['[z-a]env\n', false],
+      ['.env.example\n', false],
+      ['.env\n', true],
+      ['.env.local\n', true],
+      ['.env.*\n', true],
+      ['*.env\n', true],
+      ['.env/\n', true],
+      ['config/.env\n', true],
+      ['[.]env\n', true],
+      ['**/secrets.env\n', true],
+      ['secrets/\n!secrets/.env\n', false],
+      [' [.]env\n', false],
+      ['.env\n!.env\n', false],
+      ['.env*\n!.env.example\n', true],
+    ];
+
+    try {
+      for (const [gitignore, expected] of cases) {
+        const projectRoot = createTempDir('harness-audit-gitignore-project-');
+        try {
+          fs.writeFileSync(path.join(projectRoot, '.gitignore'), gitignore);
+          const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
+          const check = parsed.checks.find(candidate => candidate.id === 'consumer-secret-hygiene');
+          assert.strictEqual(check.pass, expected, JSON.stringify({ gitignore, expected }));
+        } finally {
+          cleanup(projectRoot);
+        }
+      }
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
   if (test('prints no top actions when consumer checks all pass', () => {
     const homeDir = createTempDir('harness-audit-passing-home-');
     const projectRoot = createTempDir('harness-audit-passing-project-');
@@ -251,6 +735,7 @@ function runTests() {
       );
       fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
       fs.mkdirSync(path.join(projectRoot, '.github', 'workflows', 'nested'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, '.github', 'ISSUE_TEMPLATE'), { recursive: true });
       fs.mkdirSync(path.join(projectRoot, 'docs', 'adr'), { recursive: true });
       fs.mkdirSync(path.join(projectRoot, 'evals'), { recursive: true });
       fs.mkdirSync(path.join(projectRoot, 'src'), { recursive: true });
@@ -259,6 +744,9 @@ function runTests() {
       fs.writeFileSync(path.join(projectRoot, 'CLAUDE.md'), '# Consumer instructions\n');
       fs.writeFileSync(path.join(projectRoot, 'src', 'app.spec.ts'), 'test placeholder\n');
       fs.writeFileSync(path.join(projectRoot, '.github', 'workflows', 'nested', 'ci.yaml'), 'name: ci\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'PULL_REQUEST_TEMPLATE.md'), '# PR\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'ISSUE_TEMPLATE', 'bug.md'), '# Bug\n');
+      fs.writeFileSync(path.join(projectRoot, '.github', 'CODEOWNERS'), '* @owner\n');
       fs.writeFileSync(path.join(projectRoot, 'docs', 'adr', '001.md'), '# Record\n');
       fs.writeFileSync(path.join(projectRoot, 'evals', 'smoke.json'), '{}\n');
       fs.writeFileSync(path.join(projectRoot, '.github', 'dependabot.yml'), 'version: 2\n');
@@ -274,7 +762,7 @@ function runTests() {
 
       const text = run(['repo'], { cwd: projectRoot, homeDir });
       assert.ok(text.includes(`Harness Audit (repo, consumer): ${parsed.max_score}/${parsed.max_score}`));
-      assert.ok(text.includes('Checks: 11 total, 0 failing'));
+      assert.ok(text.includes('Checks: 16 total, 0 failing'));
       assert.ok(!text.includes('Top 3 Actions:'));
 
       const scopedText = run(['agents'], { cwd: projectRoot, homeDir });
@@ -445,8 +933,12 @@ function runTests() {
         );
       }
 
+      // findPluginInstall also reads USERPROFILE and os.homedir() (USERPROFILE
+      // on Windows), so isolating HOME alone lets a real install win.
       const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
       process.env.HOME = homeDir;
+      process.env.USERPROFILE = homeDir;
       try {
         const found = findPluginInstall(projectRoot);
         assert.ok(found);
@@ -456,6 +948,11 @@ function runTests() {
           delete process.env.HOME;
         } else {
           process.env.HOME = originalHome;
+        }
+        if (originalUserProfile === undefined) {
+          delete process.env.USERPROFILE;
+        } else {
+          process.env.USERPROFILE = originalUserProfile;
         }
       }
     } finally {

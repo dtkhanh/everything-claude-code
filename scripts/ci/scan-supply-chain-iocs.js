@@ -247,6 +247,18 @@ const CRITICAL_TEXT_INDICATORS = [
     'b56b31abc2870c2e',
     'd2e98d6be27fc96',
   ].join(''),
+  [
+    '7c12d8619f2db233',
+    'e3d965a930709335',
+    '5f149d5babc45891',
+    '2757a5e88fec0f54',
+  ].join(''),
+  [
+    '0c0e8730695e997b',
+    '3a53d77483f28573',
+    '392319ec023f8fd6',
+    'd7282121cf7cf192',
+  ].join(''),
   'svksjrhjkcejg',
   'filev2.getsession.org',
   'seed1.getsession.org',
@@ -254,12 +266,15 @@ const CRITICAL_TEXT_INDICATORS = [
   'seed3.getsession.org',
   'signalservice',
   'git-tanstack.com',
+  '169.254.169.254',
+  '169.254.170.2',
+  '127.0.0.1:8200',
   'litter.catbox.moe/h8nc9u.js',
   'litter.catbox.moe/7rrc6l.mjs',
   '83.142.209.194',
   'api.masscan.cloud',
   'claude@users.noreply.github.com',
-  'dependabout/',
+  'dependabot/github_actions/format/',
   'OhNoWhatsGoingOnWithGitHub',
   'voicproducoes',
   'A Mini Shai-Hulud has Appeared',
@@ -341,6 +356,8 @@ const INSPECT_ONLY_FILENAMES = new Set([
 
 const PERSISTENCE_FILENAMES = new Set([
   'settings.json',
+  'settings.local.json',
+  'hooks.json',
   'tasks.json',
   'router_runtime.js',
   'setup.mjs',
@@ -370,6 +387,14 @@ const PAYLOAD_FILENAMES = new Set([
   'shai-hulud-workflow.yml',
 ]);
 
+function normalizedPath(filePath) {
+  return filePath.split(path.sep).join('/');
+}
+
+function isGhTokenMonitorTokenPath(filePath) {
+  return /\/\.config\/gh-token-monitor\/token$/.test(normalizedPath(filePath));
+}
+
 const IGNORED_DIRS = new Set([
   '.git',
   '.next',
@@ -387,8 +412,9 @@ function normalizeForMatch(value) {
 }
 
 function isInSpecialConfigPath(filePath) {
-  const normalized = filePath.split(path.sep).join('/');
+  const normalized = normalizedPath(filePath);
   return /\/\.claude\//.test(normalized)
+    || /\/\.cursor\//.test(normalized)
     || /\/\.vscode\//.test(normalized)
     || /\/\.kiro\/settings\//.test(normalized)
     || /\/Library\/LaunchAgents\//.test(normalized)
@@ -399,6 +425,7 @@ function isInSpecialConfigPath(filePath) {
 
 function shouldInspectFile(filePath) {
   const base = path.basename(filePath);
+  if (isGhTokenMonitorTokenPath(filePath)) return true;
   if (DEPENDENCY_FILENAMES.has(base)) return true;
   if (PERSISTENCE_FILENAMES.has(base) && isInSpecialConfigPath(filePath)) return true;
   if (PAYLOAD_FILENAMES.has(base) && filePath.includes(`${path.sep}node_modules${path.sep}`)) return true;
@@ -491,8 +518,105 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function versionSpecifierMatches(value, version) {
+  if (value === undefined || value === null) return false;
+  const specifier = String(value);
+  const versionPattern = new RegExp(`(^|[^0-9A-Za-z.])${escapeRegExp(version)}([^0-9A-Za-z.]|$)`, 'i');
+  return specifier === version || versionPattern.test(specifier);
+}
+
+function packageKeyMatches(key, packageName) {
+  return key === packageName
+    || key === `node_modules/${packageName}`
+    || key.endsWith(`/node_modules/${packageName}`);
+}
+
+function jsonReferencesPackageVersion(value, packageName, version) {
+  if (!value || typeof value !== 'object') return false;
+
+  if (value.name === packageName && versionSpecifierMatches(value.version, version)) {
+    return true;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (packageKeyMatches(key, packageName)) {
+      if (typeof child === 'string' && versionSpecifierMatches(child, version)) {
+        return true;
+      }
+      if (child && typeof child === 'object' && versionSpecifierMatches(child.version, version)) {
+        return true;
+      }
+    }
+
+    if (child && typeof child === 'object' && jsonReferencesPackageVersion(child, packageName, version)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function textReferencesPackageVersion(text, packageName, version) {
+  const escapedPackage = escapeRegExp(packageName);
+  const escapedVersion = escapeRegExp(version);
+  const packageToken = `${escapedPackage}(?![A-Za-z0-9._/-])`;
+  const sameLinePattern = new RegExp(`${packageToken}[^\\n]{0,200}${escapedVersion}(?![0-9A-Za-z.])`, 'i');
+  const requirementsPattern = new RegExp(`^\\s*${packageToken}\\s*(?:==|===|~=|>=|<=|>|<)\\s*${escapedVersion}(?![0-9A-Za-z.])`, 'im');
+  const poetryNamePattern = new RegExp(`name\\s*=\\s*["']${escapedPackage}["'][\\s\\S]{0,300}?version\\s*=\\s*["']${escapedVersion}["']`, 'i');
+
+  return sameLinePattern.test(text)
+    || requirementsPattern.test(text)
+    || poetryNamePattern.test(text);
+}
+
+function dependencyFileReferencesPackageVersion(text, packageName, version) {
+  try {
+    return jsonReferencesPackageVersion(JSON.parse(text), packageName, version);
+  } catch {
+    return textReferencesPackageVersion(text, packageName, version);
+  }
+}
+
 function addFinding(findings, severity, filePath, line, indicator, message) {
   findings.push({ severity, filePath, line, indicator, message });
+}
+
+function isClaudeSettingsFile(filePath) {
+  const normalized = normalizedPath(filePath);
+  return /\/\.claude\/settings(?:\.local)?\.json$/.test(normalized);
+}
+
+function claudePermissionDenyRanges(filePath, text) {
+  if (!isClaudeSettingsFile(filePath)) return [];
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+
+  const denyEntries = parsed?.permissions?.deny;
+  if (!Array.isArray(denyEntries)) return [];
+
+  const ranges = [];
+  for (const entry of denyEntries) {
+    if (typeof entry !== 'string' || entry.length === 0) continue;
+
+    for (const needle of [...new Set([JSON.stringify(entry), entry])]) {
+      let index = text.indexOf(needle);
+      while (index !== -1) {
+        ranges.push([index, index + needle.length]);
+        index = text.indexOf(needle, index + needle.length);
+      }
+    }
+  }
+
+  return ranges;
+}
+
+function indexInRanges(index, ranges) {
+  return ranges.some(([start, end]) => index >= start && index < end);
 }
 
 function scanFile(filePath, rootDir, findings) {
@@ -501,6 +625,7 @@ function scanFile(filePath, rootDir, findings) {
   const text = readText(filePath);
   const lowerText = normalizeForMatch(text);
   const hashFinding = MALICIOUS_FILE_HASHES[sha256File(filePath)];
+  const defensiveClaudeDenyRanges = claudePermissionDenyRanges(filePath, text);
 
   if (hashFinding) {
     addFinding(
@@ -524,34 +649,53 @@ function scanFile(filePath, rootDir, findings) {
     );
   }
 
+  if (isGhTokenMonitorTokenPath(filePath)) {
+    addFinding(
+      findings,
+      'critical',
+      relativePath,
+      1,
+      '~/.config/gh-token-monitor/token',
+      'Known Mini Shai-Hulud dead-man switch token store is present',
+    );
+  }
+
   for (const indicator of CRITICAL_TEXT_INDICATORS) {
-    const index = lowerText.indexOf(normalizeForMatch(indicator));
-    if (index !== -1) {
-      addFinding(
-        findings,
-        'critical',
-        relativePath,
-        lineForIndex(text, index),
-        indicator,
-        'Known active supply-chain IOC is present',
-      );
+    const normalizedIndicator = normalizeForMatch(indicator);
+    // Require a non-filename character before the indicator so legitimate
+    // names that merely end with an IOC filename (e.g. the stock Cursor hook
+    // `before-shell-execution.js` vs the payload `execution.js`) do not match.
+    const indicatorPattern = new RegExp(
+      `(?<![a-z0-9_-])${escapeRegExp(normalizedIndicator)}`,
+      'g',
+    );
+    let match;
+    while ((match = indicatorPattern.exec(lowerText)) !== null) {
+      if (!indexInRanges(match.index, defensiveClaudeDenyRanges)) {
+        addFinding(
+          findings,
+          'critical',
+          relativePath,
+          lineForIndex(text, match.index),
+          indicator,
+          'Known active supply-chain IOC is present',
+        );
+        break;
+      }
     }
   }
 
   if (!DEPENDENCY_FILENAMES.has(base)) return;
 
   for (const [packageName, versions] of Object.entries(MALICIOUS_PACKAGE_VERSIONS)) {
-    const packageIndex = lowerText.indexOf(normalizeForMatch(packageName));
-    if (packageIndex === -1) continue;
-
     for (const version of versions) {
-      const versionPattern = new RegExp(`(^|[^0-9a-z.])${escapeRegExp(version)}([^0-9a-z.]|$)`, 'i');
-      if (versionPattern.test(text) || lowerText.includes(`@${version}`)) {
+      if (dependencyFileReferencesPackageVersion(text, packageName, version)) {
+        const packageIndex = lowerText.indexOf(normalizeForMatch(packageName));
         addFinding(
           findings,
           'critical',
           relativePath,
-          lineForIndex(text, packageIndex),
+          lineForIndex(text, packageIndex === -1 ? 0 : packageIndex),
           `${packageName}@${version}`,
           'Dependency manifest or lockfile references a known compromised package version',
         );
@@ -563,13 +707,22 @@ function scanFile(filePath, rootDir, findings) {
 function homeTargets(homeDir) {
   return [
     '.claude/settings.json',
+    '.claude/settings.local.json',
+    '.claude/hooks/hooks.json',
     '.claude/router_runtime.js',
     '.claude/setup.mjs',
     '.vscode/tasks.json',
     '.vscode/setup.mjs',
+    'Library/Application Support/Code/User/tasks.json',
+    'Library/Application Support/Code - Insiders/User/tasks.json',
+    '.config/Code/User/tasks.json',
+    '.config/Code - Insiders/User/tasks.json',
+    'AppData/Roaming/Code/User/tasks.json',
+    'AppData/Roaming/Code - Insiders/User/tasks.json',
     'Library/LaunchAgents/com.user.gh-token-monitor.plist',
     '.config/systemd/user/gh-token-monitor.service',
     '.config/systemd/user/pgsql-monitor.service',
+    '.config/gh-token-monitor/token',
     '.local/bin/gh-token-monitor.sh',
     '.local/bin/pgmonitor.py',
   ].map(relativePath => path.join(homeDir, relativePath));
@@ -646,7 +799,7 @@ persistence paths for active supply-chain IOC markers.
 Options:
   --root <dir>       Directory to scan (default: repo root)
   --home             Also scan user-level Claude, VS Code, LaunchAgent, systemd,
-                     and /tmp persistence targets
+                     local bin, and /tmp persistence targets
   --home-dir <dir>   Home directory to use with --home
   --json             Emit JSON instead of text
   --help, -h         Show this help

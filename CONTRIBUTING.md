@@ -1,4 +1,4 @@
-# Contributing to Everything Claude Code
+# Contributing to ECC
 
 Thanks for wanting to contribute! This repo is a community resource for Claude Code users.
 
@@ -14,6 +14,7 @@ Thanks for wanting to contribute! This repo is a community resource for Claude C
 - [MCP and documentation (e.g. Context7)](#mcp-and-documentation-eg-context7)
 - [Cross-Harness and Translations](#cross-harness-and-translations)
 - [Pull Request Process](#pull-request-process)
+- [Releases](#releases)
 
 ---
 
@@ -52,8 +53,8 @@ Slash commands that invoke useful workflows:
 
 ```bash
 # 1. Fork and clone
-gh repo fork affaan-m/everything-claude-code --clone
-cd everything-claude-code
+gh repo fork affaan-m/ECC --clone
+cd ECC
 
 # 2. Create a branch
 git checkout -b feat/my-contribution
@@ -199,7 +200,7 @@ agents/your-agent-name.md
 ---
 name: your-agent-name
 description: What this agent does and when Claude should invoke it. Be specific!
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 ---
 
@@ -464,11 +465,44 @@ How you tested this.
 - [ ] Clear descriptions
 ```
 
-### 3. Review Process
+### 3. Before You Push (avoid red CI)
+
+Run `npm test` locally. It is the same gauntlet CI runs, and it catches almost everything below.
+
+- **Changed `package.json`?** If you touched `bin`, `files`, or dependencies, run `yarn install --mode=update-lockfile` and commit the `yarn.lock` change. CI runs Yarn in hardened mode on public PRs and fails if the lockfile would be modified, so a stale `yarn.lock` breaks the build on its own.
+- **Added a skill, command, agent, hook, or CLI tool?** Wire up every surface it belongs to:
+  - `package.json` (`bin` and `files`), `manifests/install-components.json`, `manifests/install-modules.json`, and `agent.yaml`
+  - Regenerate the catalog (`npm run catalog:sync`) and command registry (`npm run command-registry:write`)
+  - Update the docs tables (`README.md`, `COMMANDS-QUICK-REF.md`, `docs/COMMAND-AGENT-MAP.md`)
+  - New script path? Add it to the publish surface allowlist (`tests/scripts/npm-publish-surface.test.js`)
+  - Cross-harness: for Codex, add `.agents/skills/<name>/` plus `agents/openai.yaml`. The Codex frontmatter validator only allows `name`, `description`, `metadata`, `license`, and `allowed-tools`, so drop keys like `version` from that copy.
+
+### 4. Review Process
 
 1. Maintainers review within 48 hours
 2. Address feedback if requested
 3. Once approved, merged to main
+
+---
+
+## Releases
+
+Releases are cut on a regular cadence, roughly every two weeks, plus out-of-band
+patches for security or data-loss fixes.
+
+1. Sync the version everywhere: `VERSION`, `package.json`, and (via
+   `node scripts/build-pi-core.js`) `pi/core/package.json`.
+2. Update `CHANGELOG.md` and write reviewed release notes at
+   `docs/releases/<version>/release-notes.md` (required by the release workflow).
+3. Tag `vX.Y.Z` on `main` and push the tag. The `release.yml` workflow verifies
+   the tag is exactly on `origin/main`, checks the VERSION/pi/core sync, tests
+   the exact packed artifact on Linux, macOS, and Windows, publishes to npm with
+   provenance, verifies registry bytes, and creates the GitHub Release from the
+   reviewed notes.
+
+Tags and GitHub Releases are immutable once published: downstream packagers poll
+`/releases`, download `archive/refs/tags/vX.Y.Z.tar.gz`, and pin its sha256.
+Never move or re-tag a published version; ship a new patch version instead.
 
 ---
 
@@ -499,7 +533,7 @@ How you tested this.
 
 ## Questions?
 
-- **Issues:** [github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+- **Issues:** [github.com/affaan-m/ECC/issues](https://github.com/affaan-m/ECC/issues)
 - **X/Twitter:** [@affaanmustafa](https://x.com/affaanmustafa)
 
 ---

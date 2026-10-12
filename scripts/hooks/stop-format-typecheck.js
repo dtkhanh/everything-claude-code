@@ -23,10 +23,27 @@ const os = require('os');
 const path = require('path');
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../lib/resolve-formatter');
+const { resolveHookSessionId } = require('../lib/hook-session');
 
 const MAX_STDIN = 1024 * 1024;
 // Total ms budget reserved for all batches (leaves headroom below the 300s Stop timeout)
-const TOTAL_BUDGET_MS = 270_000;
+const DEFAULT_TOTAL_BUDGET_MS = 270_000;
+const MAX_TOTAL_BUDGET_MS = 270_000;
+
+function getTotalBudgetMs(env = process.env) {
+  const raw = String(env.ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS || '').trim();
+  if (!/^\d+$/.test(raw)) return DEFAULT_TOTAL_BUDGET_MS;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_TOTAL_BUDGET_MS)
+    : DEFAULT_TOTAL_BUDGET_MS;
+}
+
+function getPerBatchBudgetMs(totalBudgetMs, totalBatches) {
+  return totalBatches > 0
+    ? Math.max(1, Math.floor(totalBudgetMs / totalBatches))
+    : 60_000;
+}
 
 // Characters cmd.exe treats as separators/operators when shell: true is used.
 // Includes spaces and parentheses to guard paths like "C:\Users\John Doe\...".
@@ -37,9 +54,32 @@ function parseAccumulator(raw) {
   return [...new Set(raw.split('\n').map(l => l.trim()).filter(Boolean))];
 }
 
-function getAccumFile() {
+/**
+ * Is this file part of an installed plugin or marketplace clone?
+ *
+ * Those trees are third-party checkouts we merely read. Formatting them writes
+ * to code the user does not own, and when a repo's committed code has drifted
+ * from its own formatter config the rewrite is large: an unrelated bugfix ends
+ * up carrying hundreds of reformatted lines it never touched, which is enough
+ * to sink the contribution it was meant to support.
+ *
+ * Checks both a project-local install root and the user-level one, mirroring
+ * the lookup in scripts/harness-audit.js.
+ */
+function isPluginClonePath(filePath, cwd = process.cwd(), homeDir = os.homedir()) {
+  const resolved = path.resolve(filePath);
+  const roots = [path.join(cwd, '.claude', 'plugins')];
+  if (homeDir) roots.push(path.join(homeDir, '.claude', 'plugins'));
+
+  return roots.some(root => {
+    const rel = path.relative(root, resolved);
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  });
+}
+
+function getAccumFile(rawSessionId) {
   const raw =
-    process.env.CLAUDE_SESSION_ID ||
+    rawSessionId ||
     crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
   const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
   return path.join(os.tmpdir(), `ecc-edited-${sessionId}.txt`);
@@ -88,6 +128,14 @@ function findTsConfigDir(filePath) {
   return null;
 }
 
+function diagnosticMatchesFile(line, paths) {
+  const normalizedLine = line.replace(/\\/g, '/');
+  for (const candidate of paths) {
+    if (normalizedLine.includes(candidate.replace(/\\/g, '/'))) return true;
+  }
+  return false;
+}
+
 function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
   const isWin = process.platform === 'win32';
   const npxBin = isWin ? 'npx.cmd' : 'npx';
@@ -124,7 +172,7 @@ function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
     const relPath = path.relative(tsConfigDir, filePath);
     const candidates = new Set([filePath, relPath]);
     const relevantLines = lines
-      .filter(line => { for (const c of candidates) { if (line.includes(c)) return true; } return false; })
+      .filter(line => diagnosticMatchesFile(line, candidates))
       .slice(0, 10);
     if (relevantLines.length > 0) {
       process.stderr.write(`[Hook] TypeScript errors in ${path.basename(filePath)}:\n`);
@@ -133,8 +181,8 @@ function typecheckBatch(tsConfigDir, editedFiles, timeoutMs) {
   }
 }
 
-function main() {
-  const accumFile = getAccumFile();
+function main(sessionId) {
+  const accumFile = getAccumFile(sessionId);
 
   let raw;
   try {
@@ -151,6 +199,7 @@ function main() {
   const byProjectRoot = new Map();
   for (const filePath of files) {
     if (!/\.(ts|tsx|js|jsx)$/.test(filePath)) continue;
+    if (isPluginClonePath(filePath)) continue;
     const resolved = path.resolve(filePath);
     if (!fs.existsSync(resolved)) continue;
     const root = findProjectRoot(path.dirname(resolved));
@@ -161,6 +210,7 @@ function main() {
   const byTsConfigDir = new Map();
   for (const filePath of files) {
     if (!/\.(ts|tsx)$/.test(filePath)) continue;
+    if (isPluginClonePath(filePath)) continue;
     const resolved = path.resolve(filePath);
     if (!fs.existsSync(resolved)) continue;
     const tsDir = findTsConfigDir(resolved);
@@ -172,7 +222,8 @@ function main() {
   // Distribute the budget evenly across all batches so the cumulative total
   // stays within the Stop hook wall-clock limit even in large monorepos.
   const totalBatches = byProjectRoot.size + byTsConfigDir.size;
-  const perBatchMs = totalBatches > 0 ? Math.floor(TOTAL_BUDGET_MS / totalBatches) : 60_000;
+  const totalBudgetMs = getTotalBudgetMs();
+  const perBatchMs = getPerBatchBudgetMs(totalBudgetMs, totalBatches);
 
   for (const [root, batch] of byProjectRoot) formatBatch(root, batch, perBatchMs);
   for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs);
@@ -187,7 +238,7 @@ function main() {
  */
 function run(rawInput) {
   try {
-    main();
+    main(resolveHookSessionId(rawInput));
   } catch (err) {
     process.stderr.write(`[Hook] stop-format-typecheck error: ${err.message}\n`);
   }
@@ -196,14 +247,38 @@ function run(rawInput) {
 
 if (require.main === module) {
   let stdinData = '';
+  let truncated = false;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
-    if (stdinData.length < MAX_STDIN) stdinData += chunk.substring(0, MAX_STDIN - stdinData.length);
+    if (stdinData.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - stdinData.length;
+      stdinData += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
+    }
   });
   process.stdin.on('end', () => {
-    process.stdout.write(run(stdinData));
-    process.exit(0);
+    const output = run(stdinData);
+    // Never echo truncated stdin (invalid JSON would be reported as a Stop
+    // hook failure, #2090); flush stdout before exiting so large payloads
+    // are not cut at the pipe buffer.
+    if (truncated) {
+      process.stderr.write('[Hook] stop-format-typecheck: stdin exceeded 1MB; suppressing pass-through (fail-open)\n');
+      process.exit(0);
+    }
+    if (!output) {
+      process.exit(0);
+    }
+    process.stdout.write(output, () => process.exit(0));
   });
 }
 
-module.exports = { run, parseAccumulator };
+module.exports = {
+  diagnosticMatchesFile,
+  run,
+  parseAccumulator,
+  isPluginClonePath,
+  getTotalBudgetMs,
+  getPerBatchBudgetMs,
+};

@@ -81,7 +81,9 @@ require_file "$CONFIG_FILE" "Global config.toml"
 require_file "$AGENTS_FILE" "Global AGENTS.md"
 
 if [[ -f "$AGENTS_FILE" ]]; then
-  if search_file '^# Everything Claude Code \(ECC\)' "$AGENTS_FILE"; then
+  # Accept the current "# ECC" heading and the legacy expanded-name heading
+  # that older syncs wrote into existing ~/.codex/AGENTS.md files.
+  if search_file '^# (ECC|Everything Claude Code \(ECC\))( |$)' "$AGENTS_FILE"; then
     ok "AGENTS contains ECC root instructions"
   else
     fail "AGENTS missing ECC root instructions"
@@ -104,14 +106,16 @@ if [[ -f "$CONFIG_FILE" ]]; then
   else
     warn "persistent_instructions is not set (recommended but optional)"
   fi
-  check_config_pattern '^\[profiles\.strict\]' "profiles.strict exists"
-  check_config_pattern '^\[profiles\.yolo\]' "profiles.yolo exists"
+  require_file "$CODEX_HOME/strict.config.toml" "strict named profile"
+  require_file "$CODEX_HOME/yolo.config.toml" "yolo named profile"
+  check_config_absent '^[[:space:]]*\[profiles[.]' "legacy profile tables are absent (migrate to named .config.toml files)"
+  check_config_absent '^[[:space:]]*profile[[:space:]]*=' "legacy profile selector is absent"
 
+  # Current default connector set (docs/MCP-CONNECTOR-POLICY.md): exactly
+  # one connector. Former defaults (github, memory, sequential-thinking,
+  # context7, exa, ...) are opt-in user choices, so they are not required.
   for section in \
-    'mcp_servers.github' \
-    'mcp_servers.memory' \
-    'mcp_servers.sequential-thinking' \
-    'mcp_servers.context7'
+    'mcp_servers.chrome-devtools'
   do
     if search_file "^\[$section\]" "$CONFIG_FILE"; then
       ok "MCP section [$section] exists"
@@ -120,25 +124,17 @@ if [[ -f "$CONFIG_FILE" ]]; then
     fi
   done
 
-  has_context7_legacy=0
-  has_context7_current=0
-
-  if search_file '^\[mcp_servers\.context7\]' "$CONFIG_FILE"; then
-    has_context7_legacy=1
-  fi
-
-  if search_file '^\[mcp_servers\.context7-mcp\]' "$CONFIG_FILE"; then
-    has_context7_current=1
-  fi
-
-  if [[ "$has_context7_legacy" -eq 1 || "$has_context7_current" -eq 1 ]]; then
-    ok "MCP section [mcp_servers.context7] or [mcp_servers.context7-mcp] exists"
-  else
-    fail "MCP section [mcp_servers.context7] or [mcp_servers.context7-mcp] missing"
-  fi
-
-  if [[ "$has_context7_legacy" -eq 1 && "$has_context7_current" -eq 1 ]]; then
-    warn "Both [mcp_servers.context7] and [mcp_servers.context7-mcp] exist; prefer one name"
+  # ECC <= 2.0.0 emitted a url-only exa entry that Codex's stdio-only
+  # schema rejects, breaking the whole config (#2224). Flag it so users
+  # re-run the sync (which repairs it) or remove it manually.
+  if search_file '^\[mcp_servers\.exa\]' "$CONFIG_FILE"; then
+    exa_block="$(awk '/^\[mcp_servers\.exa\]/{flag=1;next}/^\[/{flag=0}flag' "$CONFIG_FILE")"
+    if printf '%s\n' "$exa_block" | grep -Eq '^[[:space:]]*url[[:space:]]*=' \
+      && ! printf '%s\n' "$exa_block" | grep -Eq '^[[:space:]]*command[[:space:]]*='; then
+      fail "MCP section [mcp_servers.exa] uses a url key, which Codex rejects for stdio servers — re-run ecc-sync-codex to repair (#2224)"
+    else
+      ok "MCP section [mcp_servers.exa] uses the stdio form"
+    fi
   fi
 fi
 

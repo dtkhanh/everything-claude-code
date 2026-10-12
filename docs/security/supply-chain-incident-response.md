@@ -26,9 +26,10 @@ credentials:
   with historical malicious `node-ipc` versions also blocked by ECC because
   they carried destructive or unauthorized file-writing behavior.
 - The live IOC set includes persistence through Claude Code
-  `.claude/settings.json`, VS Code `.vscode/tasks.json`, and OS-level
-  `gh-token-monitor` LaunchAgent/systemd services. Some variants add a
-  dead-man-switch token description
+  `.claude/settings.json`, VS Code `.vscode/tasks.json`, Zed
+  `.zed/tasks.json`, and OS-level `gh-token-monitor` LaunchAgent/systemd
+  services. Some variants add
+  `~/.config/gh-token-monitor/token` plus a dead-man-switch token description
   `IfYouRevokeThisTokenItWillWipeTheComputerOfTheOwner`, malicious workflow
   files such as `.github/workflows/codeql_analysis.yml`, and Python runtime
   payloads such as `transformers.pyz` / `pgmonitor.py`. Remove those
@@ -57,6 +58,7 @@ Primary references:
 - <https://tanstack.com/blog/npm-supply-chain-compromise-postmortem>
 - <https://github.com/advisories/GHSA-g7cv-rxg3-hmpx>
 - <https://tanstack.com/blog/incident-followup>
+- <https://www.wiz.io/blog/mini-shai-hulud-strikes-again-tanstack-more-npm-packages-compromised>
 - <https://socket.dev/blog/node-ipc-package-compromised>
 - <https://docs.npmjs.com/trusted-publishers/>
 - <https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem>
@@ -72,6 +74,7 @@ node scripts/ci/scan-supply-chain-iocs.js --home
 npm ci --ignore-scripts
 npm audit signatures
 npm audit --audit-level=high
+node scripts/ci/supply-chain-advisory-sources.js --json
 node scripts/ci/validate-workflow-security.js
 node tests/scripts/npm-publish-surface.test.js
 node tests/run-all.js
@@ -79,6 +82,29 @@ node tests/run-all.js
 
 If a search hit appears only in documentation examples, note it in the release
 evidence but do not rotate credentials for a docs-only reference.
+
+## Durable Watch Workflow
+
+ECC also runs `.github/workflows/supply-chain-watch.yml` every six hours and on
+manual dispatch. The workflow is read-only, disables checkout credential
+persistence, installs with `npm ci --ignore-scripts`, verifies npm registry
+signatures, runs the IOC scanner fixtures, runs
+`scripts/ci/supply-chain-advisory-sources.js --refresh --json`, emits
+`supply-chain-ioc-report.json` and `supply-chain-advisory-sources.json`, and
+re-validates GitHub Actions hardening rules.
+
+Treat a failed scheduled watch as a release blocker until an operator confirms
+whether the failure is a newly reported advisory, a stale scanner fixture, a
+registry-signature issue, or a workflow hardening regression. If the scanner
+needs new indicators, update `scripts/ci/scan-supply-chain-iocs.js`, add fixture
+coverage in `tests/ci/scan-supply-chain-iocs.test.js`, refresh this runbook, and
+attach the latest JSON artifact to the release evidence.
+
+The advisory-source artifact is the ITO-57 status payload. It records the
+trusted source registry, live URL refresh warnings, and a Linear-ready summary.
+Refresh source coverage through `npm run security:advisory-sources -- --json`
+before changing IOC coverage, and attach the artifact to the next Linear project
+status update after each significant merge batch.
 
 ## Immediate Response
 
@@ -99,6 +125,7 @@ If ECC or a maintainer machine installed a known-bad package version:
    - `~/Library/LaunchAgents/com.user.gh-token-monitor.plist`;
    - `~/.config/systemd/user/gh-token-monitor.service`;
    - `~/.config/systemd/user/pgsql-monitor.service`;
+   - `~/.config/gh-token-monitor/token`;
    - `~/.local/bin/gh-token-monitor.sh`;
    - `~/.local/bin/pgmonitor.py`;
    - `/tmp/transformers.pyz`, `/tmp/pgmonitor.py`, and their
@@ -110,8 +137,10 @@ If ECC or a maintainer machine installed a known-bad package version:
      keys, and local `.npmrc` tokens;
    - any MCP, plugin, or harness credentials available in environment variables
      or user-scope config.
-6. Purge GitHub Actions caches for affected repositories.
-7. Reinstall from a clean environment with `npm ci --ignore-scripts` first.
+6. Purge GitHub Actions dependency caches for affected repositories.
+7. Reinstall from a clean environment with lifecycle scripts disabled first:
+   `npm ci --ignore-scripts`, `pnpm install --ignore-scripts`,
+   `yarn install --mode=skip-build`, or `bun install --ignore-scripts`.
 8. Re-enable lifecycle scripts only after the dependency tree and package
    versions are pinned to known-clean releases.
 
@@ -120,7 +149,9 @@ If ECC or a maintainer machine installed a known-bad package version:
 ECC enforces these rules through `scripts/ci/validate-workflow-security.js`:
 
 - privileged workflows must not checkout untrusted PR refs;
-- workflows with write permissions must use `npm ci --ignore-scripts`;
+- all workflow dependency installs must disable lifecycle scripts;
+- workflows must not restore or save shared GitHub Actions dependency caches
+  during active supply-chain hardening;
 - workflows with `id-token: write` must not restore or save shared dependency
   caches;
 - workflows that run `npm audit` must also run `npm audit signatures`;
@@ -149,7 +180,7 @@ Escalate to a maintainer security review before any release or merge if:
 
 - a dependency lockfile references a package named in an active advisory;
 - `node scripts/ci/scan-supply-chain-iocs.js --home` finds Claude Code,
-  VS Code, or OS-level persistence indicators;
+  VS Code, Zed, or OS-level persistence indicators;
 - a workflow combines `pull_request_target` with dependency installation,
   cache restore/save, PR-head checkout, or write permissions;
 - a release workflow combines `id-token: write` with shared cache usage;

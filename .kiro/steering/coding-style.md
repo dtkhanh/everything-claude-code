@@ -1,5 +1,6 @@
 ---
-inclusion: auto
+inclusion: always
+name: coding-style
 description: Core coding style rules including immutability, file organization, error handling, and code quality standards.
 ---
 

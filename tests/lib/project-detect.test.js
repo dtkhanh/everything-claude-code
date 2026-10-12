@@ -165,6 +165,29 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('detects flask/fastapi from ~= compatible-release pins (requirements.txt)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'fastapi~=0.110\nflask~=3.0\nuvicorn');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('fastapi'), `fastapi not detected: ${JSON.stringify(result.frameworks)}`);
+      assert.ok(result.frameworks.includes('flask'), `flask not detected: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects fastapi from ~= pin in pyproject.toml dependencies', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pyproject.toml', '[project]\nname = "test"\ndependencies = [\n  "fastapi~=0.110",\n  "uvicorn"\n]');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('fastapi'), `fastapi not detected: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   // TypeScript/JavaScript detection
   console.log('\nTypeScript/JavaScript Detection:');
 
@@ -202,6 +225,39 @@ function runTests() {
       writeTestFile(dir, 'package.json', '{"dependencies":{"react":"18.0.0","react-dom":"18.0.0"}}');
       const result = detectProjectType(dir);
       assert.ok(result.frameworks.includes('react'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify preact as react (substring guard)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"preact":"10.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(!result.frameworks.includes('react'), `preact wrongly detected as react: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify reactive as react (substring guard)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"reactive":"1.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(!result.frameworks.includes('react'), `reactive wrongly detected as react: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('still detects react from react-dom alone (prefix-delimiter match preserved)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"react-dom":"18.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('react'), `react-dom should still map to react: ${JSON.stringify(result.frameworks)}`);
     } finally {
       cleanupDir(dir);
     }
@@ -355,6 +411,35 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('getPythonDeps strips ~= compatible-release pins', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'fastapi~=0.110\nflask~=3.0');
+      const deps = getPythonDeps(dir);
+      assert.ok(deps.includes('fastapi'), `fastapi missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('flask'), `flask missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.includes('flask~'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('getPythonDeps strips @ direct-reference URLs and git+ VCS forms', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'pkg @ git+https://github.com/user/repo.git\nother @ https://example.com/pkg.tar.gz\ngit-dep @ git+https://github.com/user/dep.git@v2.0\ngit+https://github.com/user/repo.git#egg=pkg');
+      const deps = getPythonDeps(dir);
+      assert.ok(deps.includes('pkg'), `pkg missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('other'), `other missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('git-dep'), `git-dep missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('git+')), `VCS URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('://')), `URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('@')), `@ delimiter leaked into deps: ${JSON.stringify(deps)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   if (test('getGoDeps reads go.mod require block', () => {
     const dir = createTempDir();
     try {
@@ -403,6 +488,87 @@ function runTests() {
       const result = detectProjectType(dir);
       assert.ok(result.languages.includes('elixir'));
       assert.ok(result.frameworks.includes('phoenix'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  // Dart/Flutter detection
+  console.log('\nDart/Flutter Detection:');
+
+  if (test('detects dart from pubspec.yaml and .dart files', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: test_pkg\nversion: 1.0.0\n');
+      writeTestFile(dir, 'main.dart', 'void main() {}\n');
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects flutter framework when pubspec.yaml depends on the Flutter SDK', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', [
+        'name: halal_cosmetics_app',
+        'dependencies:',
+        '  flutter:',
+        '    sdk: flutter',
+        '  cupertino_icons: ^1.0.2'
+      ].join('\n'));
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+      assert.ok(result.frameworks.includes('flutter'), `flutter not detected: ${JSON.stringify(result.frameworks)}`);
+      assert.strictEqual(result.primary, 'flutter');
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify a plain Dart package as flutter', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', [
+        'name: plain_dart_pkg',
+        'dependencies:',
+        '  http: ^1.0.0'
+      ].join('\n'));
+      const result = detectProjectType(dir);
+      assert.ok(result.languages.includes('dart'));
+      assert.ok(!result.frameworks.includes('flutter'), `plain Dart package wrongly detected as flutter: ${JSON.stringify(result.frameworks)}`);
+      assert.strictEqual(result.primary, 'dart');
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not combine unrelated Flutter and SDK configuration', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: plain_dart\nflutter:\n  assets: []\ndependencies:\n  other:\n    sdk: flutter\n');
+      assert.ok(!detectProjectType(dir).frameworks.includes('flutter'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('detects inline Flutter SDK dependencies', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'name: flutter_pkg\ndependencies: {flutter: {sdk: flutter}}\n');
+      assert.ok(detectProjectType(dir).frameworks.includes('flutter'));
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('malformed pubspec does not claim Flutter detection', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'pubspec.yaml', 'dependencies: [\nflutter:\n  sdk: flutter\n');
+      assert.ok(!detectProjectType(dir).frameworks.includes('flutter'));
     } finally {
       cleanupDir(dir);
     }

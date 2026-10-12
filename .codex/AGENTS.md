@@ -2,14 +2,17 @@
 
 This supplements the root `AGENTS.md` with Codex-specific guidance.
 
+For repo navigation, surface ownership, and PR diff packet guidance, read
+`docs/CODEX-NAVIGATION-GUIDE.md` after this supplement.
+
 ## Model Recommendations
 
 | Task Type | Recommended Model |
 |-----------|------------------|
-| Routine coding, tests, formatting | GPT 5.4 |
-| Complex features, architecture | GPT 5.4 |
-| Debugging, refactoring | GPT 5.4 |
-| Security review | GPT 5.4 |
+| Routine coding, tests, formatting | GPT-6 Luna medium |
+| Complex features, architecture | GPT-6 Sol high |
+| Debugging, refactoring | GPT-6 Sol high |
+| Security review | GPT-6 Sol high |
 
 ## Skills Discovery
 
@@ -84,17 +87,17 @@ Sample role configs in this repo:
 
 | Feature | Claude Code | Codex CLI |
 |---------|------------|-----------|
-| Hooks | 8+ event types | Not yet supported |
+| Hooks | 8+ event types | Reviewed native subset with explicit trust in `/hooks` |
 | Context file | CLAUDE.md + AGENTS.md | AGENTS.md only |
-| Skills | Skills loaded via plugin | `.agents/skills/` directory |
+| Skills | Skills loaded via plugin | Native plugin skills and repo `.agents/skills/` |
 | Commands | `/slash` commands | Instruction-based |
 | Agents | Subagent Task tool | Multi-agent via `/agent` and `[agents.<name>]` roles |
-| Security | Hook-based enforcement | Instruction + sandbox |
+| Security | Hook profiles + sandbox | Trusted hook subset + instruction + sandbox |
 | MCP | Full support | Supported via `config.toml` and `codex mcp add` |
 
-## Security Without Hooks
+## Security with Narrower Hooks
 
-Since Codex lacks hooks, security enforcement is instruction-based:
+Codex supports a narrower native hook subset than Claude Code, with explicit trust in `/hooks`. Treat those reviewed hooks as one layer alongside instructions and the sandbox:
 1. Always validate inputs at system boundaries
 2. Never hardcode secrets — use environment variables
 3. Run `npm audit` / `pip audit` before committing
